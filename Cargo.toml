@@ -1,0 +1,21 @@
+[package]
+name = "secop-rs"
+version = "0.1.0"
+authors = ["Georg Brandl <georg@python.org>", "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
+
+[dependencies]
+log = "*"
+time = "*"
+fnv = "*"
+mlzlog = "*"
+mlzutil = "*"
+regex = "*"
+clap = "*"
+memchr = "*"
+json = "*"
+#aho-corasick = "*"
+lazy_static = "*"
+parking_lot = "*"
+chan-signal = "*"
+daemonize = "*"
+crossbeam-channel = "*"
