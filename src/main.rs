@@ -22,7 +22,10 @@
 //
 //! The main entry point and crate definitions.
 
-// #![allow(unused)]
+#![feature(duration_float)]
+
+#![allow(unused_variables)]
+#![allow(dead_code)]
 
 #[macro_use]
 extern crate log;
@@ -35,19 +38,27 @@ extern crate clap;
 extern crate regex;
 extern crate memchr;
 #[macro_use]
-extern crate json;
-//extern crate aho_corasick;
-#[macro_use]
 extern crate lazy_static;
 extern crate parking_lot;
 extern crate daemonize;
 extern crate chan_signal;
+#[macro_use]
 extern crate crossbeam_channel;
+extern crate serde;
+#[macro_use]
+extern crate serde_json;
+extern crate serde_derive;
+// #[macro_use]
+// extern crate secop_derive;
 
 mod proto;
 mod server;
 mod module;
+mod types;
+mod errors;
 mod util;
+
+mod play;
 
 
 fn main() {
@@ -64,7 +75,7 @@ fn main() {
         (@arg daemon: -d "Daemonize?")
         (@arg user: --user [USER] "User name for daemon")
         (@arg group: --group [GROUP] "Group name for daemon")
-        (@arg config: +required "Configuration file name to load")
+        (@arg config: "Configuration file name to load") // TODO make it required
     ).get_matches();
 
     let log_path = util::abspath(args.value_of("log").expect(""));
@@ -81,7 +92,7 @@ fn main() {
             eprintln!("could not daemonize process: {}", err);
         }
     }
-    let config = args.value_of("config").unwrap();
+    let config = args.value_of("config").unwrap_or("secop");
     if let Err(err) = mlzlog::init(Some(log_path), config, false,
                                    args.is_present("verbose"),
                                    !args.is_present("daemon")) {

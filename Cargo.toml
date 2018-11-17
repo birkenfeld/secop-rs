@@ -1,7 +1,11 @@
+[workspace]
+
 [package]
-name = "secop-rs"
+name = "secop"
 version = "0.1.0"
-authors = ["Georg Brandl <georg@python.org>", "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
+authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
+           "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
+edition = "2018"
 
 [dependencies]
 log = "*"
@@ -12,10 +16,15 @@ mlzutil = "*"
 regex = "*"
 clap = "*"
 memchr = "*"
-json = "*"
+serde = "*"
+serde_json = "*"
+serde_derive = "*"
 #aho-corasick = "*"
 lazy_static = "*"
 parking_lot = "*"
 chan-signal = "*"
 daemonize = "*"
 crossbeam-channel = "*"
+
+[dependencies.secop-derive]
+path = "secop-derive"

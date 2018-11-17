@@ -16,16 +16,14 @@
 // 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 //
 // Module authors:
-//   Georg Brandl <georg.brandl@frm2.tum.de>
+//   Georg Brandl <g.brandl@fz-juelich.de>
 //
 // -----------------------------------------------------------------------------
 //
 //! This module contains misc. utilities.
 
-#![allow(unused)]
-
 use std::io::{self, Write};
-use std::fs::{DirBuilder, OpenOptions, File, read_link, remove_file};
+use std::fs::{DirBuilder, File, read_link, remove_file};
 use std::path::{Path, PathBuf};
 
 use time;

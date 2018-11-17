@@ -16,16 +16,17 @@
 // 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 //
 // Module authors:
-//   Georg Brandl <georg.brandl@frm2.tum.de>
+//   Georg Brandl <g.brandl@fz-juelich.de>
 //
 // -----------------------------------------------------------------------------
 //
 //! This module contains the definition of a protocol message, along with tools
 //! to parse and string-format it.
 
-use std::borrow::Cow;
+// use std::borrow::Cow;
+use std::fmt;
 use regex::Regex;
-use json::{self, JsonValue};
+use serde_json::Value;
 
 
 lazy_static! {
@@ -42,73 +43,50 @@ lazy_static! {
     "#).unwrap();
 }
 
-type Str<'a> = Cow<'a, str>;
+type Str = String;
 
 pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2\n";
-
-pub mod err {
-    #![allow(unused)]
-    use std::borrow::Cow;
-
-    pub const NO_MODULE: Cow<'static, str> = Cow::Borrowed("NoSuchModule");
-    pub const NO_PARAM:  Cow<'static, str> = Cow::Borrowed("NoSuchParameter");
-    pub const NO_CMD:    Cow<'static, str> = Cow::Borrowed("NoSuchCommand");
-    pub const CMD_FAIL:  Cow<'static, str> = Cow::Borrowed("CommandFailed");
-    pub const READ_ONLY: Cow<'static, str> = Cow::Borrowed("ReadOnly");
-    pub const BAD_VALUE: Cow<'static, str> = Cow::Borrowed("BadValue");
-    pub const COMM_FAIL: Cow<'static, str> = Cow::Borrowed("CommunicationFailed");
-    pub const IS_BUSY:   Cow<'static, str> = Cow::Borrowed("IsBusy");
-    pub const IS_ERROR:  Cow<'static, str> = Cow::Borrowed("IsError");
-    pub const PROTOCOL:  Cow<'static, str> = Cow::Borrowed("ProtocolError");
-    pub const INTERNAL:  Cow<'static, str> = Cow::Borrowed("InternalError");
-    pub const CMD_RUNS:  Cow<'static, str> = Cow::Borrowed("CommandRunning");
-    pub const DISABLED:  Cow<'static, str> = Cow::Borrowed("Disabled");
-}
 
 /// An algebraic data type that represents any message that can be sent
 /// over the network in the protocol.
 ///
 /// String entries here can be borrowed from a network buffer, or owned.
 #[derive(Debug)]
-pub enum Msg<'a> {
+pub enum Msg {
     /// identify request
     IdentReq,
     /// identify reply
-    IdentRep { encoded: Str<'a> },
+    IdentRep { encoded: Str },
     /// description request
     DescribeReq,
     /// description reply
-    DescribeRep { id: Str<'a>, desc: JsonValue },
+    DescribeRep { id: Str, desc: Value },
     /// event enable request
-    EventEnableReq,
+    EventEnableReq { module: Str },
     /// event enable reply
-    EventEnableRep,
+    EventEnableRep { module: Str },
     /// event disable request
-    EventDisableReq,
+    EventDisableReq { module: Str },
     /// event disable reply
-    EventDisableRep,
+    EventDisableRep { module: Str },
     /// command execution request
-    CommandReq { module: Str<'a>, command: Option<Str<'a>>, args: JsonValue },
+    CommandReq { module: Str, command: Str, args: Value },
     /// command result
-    CommandRep { module: Str<'a>, command: Option<Str<'a>>, result: JsonValue },
+    CommandRep { module: Str, command: Str, result: Value },
     /// change request
-    WriteReq { module: Str<'a>, param: Option<Str<'a>>, value: JsonValue },
+    ChangeReq { module: Str, param: Str, value: Value },
     /// change result
-    WriteRep { module: Str<'a>, param: Option<Str<'a>>, value: JsonValue },
+    ChangeRep { module: Str, param: Str, value: Value },
     /// trigger/poll request
-    TriggerReq { module: Str<'a>, param: Option<Str<'a>> },
+    TriggerReq { module: Str, param: Str },
     /// heartbeat request
-    PingReq { nonce: Str<'a> },
+    PingReq { token: Str },
     /// heartbeat reply
-    PingRep { nonce: Str<'a> },
-    /// help request
-    HelpReq,
-    /// help reply
-    HelpRep { n: u64, line: JsonValue },
+    PingRep { token: Str, data: Value },
     /// error reply
-    ErrorRep { class: Str<'a>, info: JsonValue },
-    /// event
-    Event { module: Str<'a>, param: Option<Str<'a>>, value: JsonValue },
+    ErrorRep { class: Str, report: Value },
+    /// update event
+    Update { module: Str, param: Str, value: Value },
 }
 
 use self::Msg::*;
@@ -121,8 +99,6 @@ mod wire {
     pub const ACTIVE: &str = "active";
     pub const DEACTIVATE: &str = "deactivate";
     pub const INACTIVE: &str = "inactive";
-    pub const HELP: &str = "help";
-    pub const HELPING: &str = "helping";
     pub const PING: &str = "ping";
     pub const PONG: &str = "pong";
     pub const ERROR: &str = "error";
@@ -134,7 +110,7 @@ mod wire {
     pub const UPDATE: &str = "update";
 }
 
-impl<'a> Msg<'a> {
+impl Msg {
     /// Parse a string slice containing a message.
     ///
     /// This matches a regular expression, and then creates a `Msg` if successful.
@@ -146,41 +122,39 @@ impl<'a> Msg<'a> {
             let spec1 = split.next().unwrap();
             let spec2 = split.next();
             let data = if let Some(jsonstr) = captures.get(3) {
-                match json::parse(jsonstr.as_str()) {
+                match serde_json::from_str(jsonstr.as_str()) {
                     Ok(v) => v,
-                    Err(_) => return Err(ErrorRep { class: err::BAD_VALUE,
-                                                    info: array!("invalid json",
-                                                                 jsonstr.as_str()) })
+                    Err(_) => return Err(ErrorRep { class: "BadValue".into(), // TODO dupe
+                                                    report: json!([msg, "invalid json", {}]) })
                 }
-            } else { JsonValue::Null };
+            } else { Value::Null };
             match msgtype {
                 wire::IDN =>        Ok(IdentReq),
                 wire::DESCRIBE =>   Ok(DescribeReq),
                 wire::DESCRIBING => Ok(DescribeRep { id: spec1, desc: data }),
-                wire::ACTIVATE =>   Ok(EventEnableReq),
-                wire::ACTIVE =>     Ok(EventEnableRep),
-                wire::DEACTIVATE => Ok(EventDisableReq),
-                wire::INACTIVE =>   Ok(EventDisableRep),
-                wire::HELP =>       Ok(HelpReq),
-                wire::HELPING =>    Ok(HelpRep { n: spec1.parse().unwrap_or(0), line: data }),
-                wire::PING =>       Ok(PingReq { nonce: spec1 }),
-                wire::PONG =>       Ok(PingRep { nonce: spec1 }),
-                wire::ERROR =>      Ok(ErrorRep { class: spec1, info: data }),
-                wire::DO =>         Ok(CommandReq { module: spec1, command: spec2, args: data }),
-                wire::DONE =>       Ok(CommandRep { module: spec1, command: spec2, result: data }),
-                wire::CHANGE =>     Ok(WriteReq { module: spec1, param: spec2, value: data }),
-                wire::CHANGED =>    Ok(WriteRep { module: spec1, param: spec2, value: data }),
-                wire::READ =>       Ok(TriggerReq { module: spec1, param: spec2 }),
-                wire::UPDATE =>     Ok(Event { module: spec1, param: spec2, value: data }),
-                _ => Err(ErrorRep { class: err::PROTOCOL,
-                                    info: format!("{}: no such message type defined", msgtype).into() })
+                wire::ACTIVATE =>   Ok(EventEnableReq { module: spec1 }),
+                wire::ACTIVE =>     Ok(EventEnableRep { module: spec1 }),
+                wire::DEACTIVATE => Ok(EventDisableReq { module: spec1 }),
+                wire::INACTIVE =>   Ok(EventDisableRep { module: spec1 }),
+                wire::PING =>       Ok(PingReq { token: spec1 }),
+                wire::PONG =>       Ok(PingRep { token: spec1, data: data }),
+                wire::ERROR =>      Ok(ErrorRep { class: spec1, report: data }),
+                wire::DO =>         Ok(CommandReq { module: spec1, command: spec2.expect("XXX"), args: data }),
+                wire::DONE =>       Ok(CommandRep { module: spec1, command: spec2.expect("XXX"), result: data }),
+                wire::CHANGE =>     Ok(ChangeReq { module: spec1, param: spec2.expect("XXX"), value: data }),
+                wire::CHANGED =>    Ok(ChangeRep { module: spec1, param: spec2.expect("XXX"), value: data }),
+                wire::READ =>       Ok(TriggerReq { module: spec1, param: spec2.expect("XXX") }),
+                wire::UPDATE =>     Ok(Update { module: spec1, param: spec2.expect("XXX"), value: data }),
+                _ => Err(ErrorRep { class: "ProtocolError".into(), // TODO dupe
+                                    report: json!([msg, "no such message type", {}]) })
             }
         } else if msg == IDENT_REPLY {
             // identify reply has a special format (to be compatible with SCPI)
-            Ok(Msg::IdentRep { encoded: IDENT_REPLY.into() })
+            Ok(IdentRep { encoded: IDENT_REPLY.into() })
         } else {
             // treat otherwise undecodable messages like a help request
-            Ok(Msg::HelpReq)
+            Err(ErrorRep { class: "ProtocolError".into(),
+                           report: json!([msg, "invalid message format", {}]) })
         }
     }
 }
@@ -189,45 +163,43 @@ impl<'a> Msg<'a> {
 ///
 /// Not all messages are actually used for stringification, but this is also
 /// nice for debugging purposes.
-impl<'a> ToString for Msg<'a> {
-    fn to_string(&self) -> String {
-        fn combine_spec<'a>(a: &Str<'a>, b: &Option<Str<'a>>) -> String {
-            match *b {
-                Some(ref b) => format!("{}:{}", a, b),
-                None => a.to_string(),
-            }
-        }
-
+impl fmt::Display for Msg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            IdentReq => wire::IDN.into(),
-            IdentRep { encoded } => encoded.to_string(),
-            DescribeReq => wire::DESCRIBE.into(),
-            DescribeRep { id, desc } => format!("{} {} {}", wire::DESCRIBING, id, desc),
-            EventEnableReq => wire::ACTIVATE.into(),
-            EventEnableRep => wire::ACTIVE.into(),
-            EventDisableReq => wire::DEACTIVATE.into(),
-            EventDisableRep => wire::INACTIVE.into(),
-            HelpReq => wire::HELP.into(),
+            IdentReq => f.write_str(wire::IDN),
+            IdentRep { encoded } => f.write_str(&encoded),
+            DescribeReq => f.write_str(wire::DESCRIBE),
+            DescribeRep { id, desc } => write!(f, "{} {} {}", wire::DESCRIBING, id, desc),
+            EventEnableReq { module } =>
+                if module.is_empty() { f.write_str(wire::ACTIVATE) }
+                else { write!(f, "{} {}", wire::ACTIVATE, module) },
+            EventEnableRep { module } =>
+                if module.is_empty() { f.write_str(wire::ACTIVE) }
+                else { write!(f, "{} {}", wire::ACTIVE, module) },
+            EventDisableReq { module } =>
+                if module.is_empty() { f.write_str(wire::DEACTIVATE) }
+                else { write!(f, "{} {}", wire::DEACTIVATE, module) },
+            EventDisableRep { module } =>
+                if module.is_empty() { f.write_str(wire::INACTIVE) }
+                else { write!(f, "{} {}", wire::INACTIVE, module) },
             CommandReq { module, command, args } =>
-                format!("{} {} {}", wire::DO, combine_spec(module, command), args),
+                write!(f, "{} {}:{} {}", wire::DO, module, command, args),
             CommandRep { module, command, result } =>
-                format!("{} {} {}", wire::DONE, combine_spec(module, command), result),
-            WriteReq { module, param, value } =>
-                format!("{} {} {}", wire::CHANGE, combine_spec(module, param), value),
-            WriteRep { module, param, value } =>
-                format!("{} {} {}", wire::CHANGED, combine_spec(module, param), value),
+                write!(f, "{} {}:{} {}", wire::DONE, module, command, result),
+            ChangeReq { module, param, value } =>
+                write!(f, "{} {}:{} {}", wire::CHANGE, module, param, value),
+            ChangeRep { module, param, value } =>
+                write!(f, "{} {}:{} {}", wire::CHANGED, module, param, value),
             TriggerReq { module, param } =>
-                format!("{} {}", wire::READ, combine_spec(module, param)),
-            PingReq { nonce } =>
-                if nonce.is_empty() { wire::PING.into() } else { format!("{} {}", wire::PING, nonce) },
-            PingRep { nonce } =>
-                if nonce.is_empty() { wire::PONG.into() } else { format!("{} {}", wire::PONG, nonce) },
-            HelpRep { n, line } =>
-                format!("{} {} {}", wire::HELPING, n, line),
-            ErrorRep { class, info } =>
-                format!("{} {} {}", wire::ERROR, class, info),
-            Event { module, param, value } =>
-                format!("{} {} {}", wire::UPDATE, combine_spec(module, param), value),
+                write!(f, "{} {}:{}", wire::READ, module, param),
+            Update { module, param, value } =>
+                write!(f, "{} {}:{} {}", wire::UPDATE, module, param, value),
+            PingReq { token } =>
+                if token.is_empty() { f.write_str(wire::PING) }
+                else { write!(f, "{} {}", wire::PING, token) },
+            PingRep { token, data } => write!(f, "{} {} {}", wire::PONG, token, data),
+            ErrorRep { class, report } =>
+                write!(f, "{} {} {}", wire::ERROR, class, report),
         }
     }
 }

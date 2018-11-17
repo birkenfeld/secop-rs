@@ -16,7 +16,7 @@
 // 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 //
 // Module authors:
-//   Georg Brandl <georg.brandl@frm2.tum.de>
+//   Georg Brandl <g.brandl@fz-juelich.de>
 //
 // -----------------------------------------------------------------------------
 //
@@ -26,57 +26,66 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::thread;
 use memchr::memchr;
-use crossbeam_channel::{unbounded, Sender, Receiver};
+use crossbeam_channel::{Sender, Receiver};
 
-use proto::IDENT_REPLY;
-use proto::Msg;
-use proto::Msg::*;
-use server::{ClientAddr, RECVBUF_LEN};
+use crate::proto::IDENT_REPLY;
+use crate::proto::Msg;
+use crate::proto::Msg::*;
+use crate::server::{ClientAddr, RECVBUF_LEN, HId};
+use crate::util::localtime;
 
 
 pub struct Handler {
-    name:   String,
+    hid: HId,
+    addr: ClientAddr,
     client: TcpStream,
-    // addr:   ClientAddr,
-    send_q: Sender<String>,
+    req_sender: Sender<(HId, Msg)>,
+    rep_sender: Sender<String>,
 }
 
-// TODO: use mlzlog::set_thread_name
-// TODO: make names of channels more consistent
-
 impl Handler {
-    pub fn new(client: TcpStream, addr: ClientAddr) -> Handler {
+    pub fn new(hid: HId, client: TcpStream, addr: ClientAddr,
+               req_sender: Sender<(HId, Msg)>,
+               rep_sender: Sender<String>, rep_receiver: Receiver<String>) -> Handler {
         // spawn a thread that handles sending replies and events back
-        let (w_msgs, r_msgs) = unbounded();
         let send_client = client.try_clone().expect("could not clone socket");
         let thread_name = addr.to_string();
-        thread::spawn(move || Handler::sender(&thread_name, send_client, r_msgs));
-        Handler {
-            name:   addr.to_string(),
-            // addr:   addr,
-            send_q: w_msgs,
-            client,
-        }
+        thread::spawn(move || Handler::sender(&thread_name, send_client, rep_receiver));
+        mlzlog::set_thread_prefix(format!("[{}] ", addr));
+        Handler { hid, addr, client, req_sender, rep_sender }
     }
 
     /// Thread that sends back replies and events to the client.
-    fn sender(name: &str, mut client: TcpStream, r_msgs: Receiver<String>) {
-        for to_send in r_msgs {
+    fn sender(name: &str, mut client: TcpStream, rep_receiver: Receiver<String>) {
+        mlzlog::set_thread_prefix(format!("[{}] ", name));
+        for to_send in rep_receiver {
             if let Err(err) = client.write_all(to_send.as_bytes()) {
-                warn!("[{}] write error in sender: {}", name, err);
+                warn!("write error in sender: {}", err);
                 break;
             }
         }
-        info!("[{}] sender quit", name);
+        info!("sender quit");
+    }
+
+    fn send_back(&self, msg: Msg) {
+        self.rep_sender.send(format!("{}\n", msg)).expect("sending to client failed");
     }
 
     fn handle_msg(&self, msg: Msg) {
         match msg {
+            ChangeReq { .. } | CommandReq { .. } | TriggerReq { .. } | DescribeReq |
+            EventEnableReq { .. } | EventDisableReq { .. } => {
+                self.req_sender.send((self.hid, msg)).unwrap();
+            }
+            PingReq { token } => {
+                let data = json!([null, {"t": localtime()}]);
+                self.send_back(PingRep { token, data });
+            }
             IdentReq => {
-                self.send_q.send(IDENT_REPLY.into()).expect("reply failed");
+                self.send_back(IdentRep { encoded: IDENT_REPLY.into() });
             }
             _ => {
-                warn!("[{}] message {:?} not handled yet", self.name, msg);
+                warn!("message {:?} not handled yet", msg);
             }
         }
     }
@@ -85,13 +94,14 @@ impl Handler {
     fn process(&self, line: &str) -> bool {
         match Msg::parse(line) {
             Ok(msg) => {
-                debug!("[{}] processing {:?} => {:?}", self.name, line, msg);
+                debug!("processing {:?} => {:?}", line, msg);
                 self.handle_msg(msg);
                 true
             }
-            Err(e) => {
-                // not a valid cache protocol line => ignore it
-                warn!("[{}] unhandled line: {:?} - {}", self.name, line, e.to_string());
+            Err(msg) => {
+                // error while parsing: this will be an ErrorRep
+                warn!("failed to parse line: {:?} - {}", line, msg);
+                self.send_back(msg);
                 true
             }
         }
@@ -106,7 +116,7 @@ impl Handler {
             // read a chunk of incoming data
             let got = match self.client.read(&mut recvbuf) {
                 Err(err) => {
-                    warn!("[{}] error in recv(): {}", self.name, err);
+                    warn!("error in recv(): {}", err);
                     break;
                 },
                 Ok(0)    => break,  // no data from blocking read...
@@ -128,6 +138,6 @@ impl Handler {
             }
             buf.drain(..from);
         }
-        info!("[{}] handler is finished", self.name);
+        info!("handler is finished");
     }
 }
