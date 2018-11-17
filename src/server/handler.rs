@@ -28,9 +28,9 @@ use std::thread;
 use memchr::memchr;
 use crossbeam_channel::{unbounded, Sender, Receiver};
 
-use message::IDENT_REPLY;
-use message::Msg;
-use message::Msg::*;
+use proto::IDENT_REPLY;
+use proto::Msg;
+use proto::Msg::*;
 use server::{ClientAddr, RECVBUF_LEN};
 
 

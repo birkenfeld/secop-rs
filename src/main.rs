@@ -44,9 +44,9 @@ extern crate daemonize;
 extern crate chan_signal;
 extern crate crossbeam_channel;
 
-mod handler;
-mod message;
+mod proto;
 mod server;
+mod module;
 mod util;
 
 

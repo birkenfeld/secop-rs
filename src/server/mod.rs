@@ -22,11 +22,13 @@
 //
 //! This module contains the server instance itself.
 
+mod handler;
+
 use std::io;
 use std::net::{SocketAddr, TcpListener};
 use std::thread;
 
-use handler::Handler;
+use self::handler::Handler;
 
 pub const RECVBUF_LEN: usize = 4096;
 
