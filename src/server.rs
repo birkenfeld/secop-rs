@@ -22,13 +22,12 @@
 //
 //! This module contains the server instance itself.
 
-// XXX: use fxhash
-use std::collections::{HashMap, HashSet};
 use std::io::{self, prelude::*};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
 use std::thread;
 use memchr::memchr;
+use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver};
 
 use crate::module::Module;
@@ -80,7 +79,7 @@ impl Server {
         let (rep_sender, rep_receiver) = unbounded();
 
         // create the modules
-        let mut mod_senders = HashMap::new();
+        let mut mod_senders = HashMap::default();
 
         let (mod_sender, mod_receiver) = unbounded();
         let mod1 = crate::play::cryo::Cryo::create(&());
@@ -90,8 +89,8 @@ impl Server {
 
         // create the dispatcher
         let dispatcher = Dispatcher {
-            handlers: HashMap::new(),
-            active: HashMap::new(),
+            handlers: HashMap::default(),
+            active: HashMap::default(),
             modules: mod_senders,
             connections: con_receiver,
             requests: req_receiver,

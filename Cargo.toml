@@ -10,7 +10,7 @@ edition = "2018"
 [dependencies]
 log = "*"
 time = "*"
-fnv = "*"
+fxhash = "*"
 mlzlog = "*"
 mlzutil = "*"
 regex = "*"

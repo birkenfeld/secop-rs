@@ -32,7 +32,7 @@ extern crate log;
 extern crate mlzlog;
 extern crate mlzutil;
 extern crate time;
-extern crate fnv;
+extern crate fxhash;
 #[macro_use]
 extern crate clap;
 extern crate regex;
