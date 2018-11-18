@@ -120,12 +120,11 @@ impl Dispatcher {
         loop {
             select! {
                 recv(self.connections) -> res => if let Ok((hid, conn)) = res {
-                    // XXX: handlers are never cleaned up at the moment!
-                    // info!("dispatcher got handler {}", hid);
+                    debug!("got handler {}", hid);
                     self.handlers.insert(hid, conn);
                 },
                 recv(self.requests) -> res => if let Ok((hid, req)) = res {
-                    // info!("dispatcher got request {} -> {}", hid, req);
+                    debug!("got request {} -> {}", hid, req);
                     match req {
                         CommandReq { ref module, .. } |
                         ChangeReq  { ref module, .. } |
@@ -158,11 +157,17 @@ impl Dispatcher {
                             // TODO
                             self.handlers[&hid].send(format!("XXX\n")).unwrap();
                         }
+                        Quit => {
+                            self.handlers.remove(&hid);
+                            for set in self.active.values_mut() {
+                                set.remove(&hid);
+                            }
+                        }
                         _ => warn!("message should not arrive here: {}", req),
                     }
                 },
                 recv(self.replies) -> res => if let Ok((hid, rep)) = res {
-                    // info!("dispatcher got reply {:?} -> {}", hid, rep);
+                    debug!("got reply {:?} -> {}", hid, rep);
                     match hid {
                         None => if let Update { ref module, .. } = rep {
                             if let Some(set) = self.active.get(&**module) {
@@ -285,6 +290,7 @@ impl Handler {
             }
             buf.drain(..from);
         }
+        self.req_sender.send((self.hid, Quit)).unwrap();
         info!("handler is finished");
     }
 }

@@ -87,6 +87,8 @@ pub enum Msg {
     ErrorRep { class: Str, report: Value },
     /// update event
     Update { module: Str, param: Str, value: Value },
+    /// not a protocol message, indicates the connection is done
+    Quit,
 }
 
 use self::Msg::*;
@@ -200,6 +202,7 @@ impl fmt::Display for Msg {
             PingRep { token, data } => write!(f, "{} {} {}", wire::PONG, token, data),
             ErrorRep { class, report } =>
                 write!(f, "{} {} {}", wire::ERROR, class, report),
+            Quit => write!(f, "<eof>"),
         }
     }
 }

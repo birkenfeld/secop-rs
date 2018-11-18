@@ -41,9 +41,9 @@ def ask_only():
     cons = connect(opts.s)
     query = ''.join('read cryo:target\n' for _ in range(opts.n))
     rep = ''.join('update cryo:target [0.0,{}]\n' for _ in range(opts.n))
+    t1 = time.time()
     for con in cons:
         con.sendall(query)
-    t1 = time.time()
     for con in cons:
         assert recvall(con, len(rep)) == rep
     return t1
