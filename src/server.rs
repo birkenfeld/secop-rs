@@ -36,12 +36,11 @@ use crate::util::localtime;
 
 pub const RECVBUF_LEN: usize = 4096;
 
-pub type ClientAddr = SocketAddr;
-
+/// Handler ID.  This is nonzero so that Option<HId> is the same size.
 pub type HId = NonZeroU64;
 
 pub struct Server {
-    modules: Vec<Box<dyn Module>>, // TODO unused now
+    modules: Vec<Box<dyn Module>>, // TODO unused right now
 }
 
 impl Server {
@@ -72,15 +71,20 @@ impl Server {
     }
 
     /// Main server function; start threads to accept clients on the listening
-    /// socket and spawn handlers to handle them.
+    /// socket, the dispatcher, and the individual modules.
     pub fn start(self, addr: &str) -> io::Result<()> {
+        // create a few channels we need for the dispatcher:
+        // sending info about incoming connections to the dispatcher
         let (con_sender, con_receiver) = unbounded();
+        // sending requests from all handlers to the dispatcher
         let (req_sender, req_receiver) = unbounded();
+        // sending replies from all modules to the dispatcher
         let (rep_sender, rep_receiver) = unbounded();
 
         // create the modules
         let mut mod_senders = HashMap::default();
 
+        // TODO: create this from Config, not hardcoded...
         let (mod_sender, mod_receiver) = unbounded();
         let mod_rep_sender = rep_sender.clone();
         let int = ModInternals::new("cryo".into(), mod_receiver, mod_rep_sender);
@@ -106,6 +110,10 @@ impl Server {
     }
 }
 
+/// The dispatcher acts as a central piece connected to both modules and clients,
+/// all via channels.
+///
+/// It receives requests with an associated 
 struct Dispatcher {
     handlers: HashMap<HId, Sender<String>>,
     active: HashMap<String, HashSet<HId>>,
@@ -187,17 +195,25 @@ impl Dispatcher {
     }
 }
 
-
+/// The Handler represents a single client connection, both the read and
+/// write halves.
+///
+/// The write half is in its own thread to be able to send back replies (which
+/// can come both from the Handler and the Dispatcher) instantly.
 pub struct Handler {
-    hid: HId,
-    addr: ClientAddr,
     client: TcpStream,
+    /// Assigned handler ID.
+    hid: HId,
+    /// Address of the remote peer socket.
+    addr: SocketAddr,
+    /// Sender for incoming requests, to the dispatcher.
     req_sender: Sender<(HId, Msg)>,
+    /// Sender for outgoing replies, to the sender thread.
     rep_sender: Sender<String>,
 }
 
 impl Handler {
-    pub fn new(hid: HId, client: TcpStream, addr: ClientAddr,
+    pub fn new(hid: HId, client: TcpStream, addr: SocketAddr,
                req_sender: Sender<(HId, Msg)>,
                rep_sender: Sender<String>, rep_receiver: Receiver<String>) -> Handler {
         // spawn a thread that handles sending replies and events back
@@ -220,16 +236,20 @@ impl Handler {
         info!("sender quit");
     }
 
+    /// Send a message back to the client.
     fn send_back(&self, msg: Msg) {
         self.rep_sender.send(format!("{}\n", msg)).expect("sending to client failed");
     }
 
+    /// Handle an incoming correctly-parsed message.
     fn handle_msg(&self, msg: Msg) {
         match msg {
+            // most messages must go through the dispatcher to a module
             ChangeReq { .. } | CommandReq { .. } | TriggerReq { .. } | DescribeReq |
             EventEnableReq { .. } | EventDisableReq { .. } => {
                 self.req_sender.send((self.hid, msg)).unwrap();
             }
+            // but a few of them we can respond to from here
             PingReq { token } => {
                 let data = json!([null, {"t": localtime()}]);
                 self.send_back(PingRep { token, data });
@@ -252,7 +272,7 @@ impl Handler {
                 true
             }
             Err(msg) => {
-                // error while parsing: this will be an ErrorRep
+                // error while parsing: msg will be an ErrorRep
                 warn!("failed to parse line: {:?} - {}", line, msg);
                 self.send_back(msg);
                 true

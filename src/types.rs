@@ -17,6 +17,7 @@
 //
 // Module authors:
 //   Georg Brandl <g.brandl@fz-juelich.de>
+//   Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>
 //
 // -----------------------------------------------------------------------------
 //
@@ -26,14 +27,28 @@ use std::string::String as StdString;
 use fxhash::FxHashMap as HashMap;
 use serde_json::Value;
 
+/// Represents a defined SeCOP data type usable for parameters and command
+/// arguments/results.
+///
+/// The Repr associated type should be set to a Rust type that can hold all
+/// possible values, and conversion between JSON and that type is implemented
+/// using `from_repr` and `to_repr`.
+///
+/// On conversion error, the incoming JSON Value is simply returned, and the
+/// caller is responsible for raising the correct SeCOP error.
 pub trait TypeDesc {
     type Repr;
+    /// Return a JSON-serialized description of the data type.
     fn as_json(&self) -> Value;
+    /// Convert an internal value, as determined by the module code,
+    /// into the JSON representation for the protocol.
     fn from_repr(&self, val: Self::Repr) -> Value;
+    /// Convert an external JSON value, incoming from a connection.
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value>;
 }
 
 
+/// None is not usable as a parameter data type, only for commands.
 pub struct None;
 
 impl TypeDesc for None {
@@ -296,6 +311,13 @@ impl Enum {
 //     group: Option<Str<'a>>,
 // }
 
+// This is a mess :(
+//
+// In order to generate the param/cmd types as statics, we need not only
+// the value given by the user, e.g. `DoubleFrom(0.)`, but also its type
+// (since statics don't infer the type).
+//
+// This provides a working but messy way of doing this, for now.
 #[macro_export]
 macro_rules! datatype_type {
     (None) => (None);

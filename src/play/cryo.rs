@@ -1,3 +1,26 @@
+// -----------------------------------------------------------------------------
+// Rust SECoP playground
+//
+// This program is free software; you can redistribute it and/or modify it under
+// the terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or (at your option) any later
+// version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along with
+// this program; if not, write to the Free Software Foundation, Inc.,
+// 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+//
+// Module authors:
+//   Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>
+//   Georg Brandl <g.brandl@fz-juelich.de>
+//
+// -----------------------------------------------------------------------------
+//
 //! Demo cryo module.
 
 use std::sync::Arc;
@@ -69,8 +92,11 @@ impl CryoSimulator {
                    v.sample, v.regulation, heatflow);
             let newsample = (v.sample + h*(self.sample_leak(v.sample) -
                                            heatflow)/self.sample_cp(v.sample)).max(0.);
-            let regdelta = v.heater * 0.01 * MAXPOWER + heatflow - self.cooler_power(v.regulation);
-            let newregulation = (v.regulation + h*regdelta/self.cooler_cp(v.regulation)).max(0.);
+            let newsample = clamp(newsample, v.sample, v.regulation);
+            let regdelta = v.heater * 0.01 * MAXPOWER + heatflow -
+                self.cooler_power(v.regulation);
+            let newregulation = (v.regulation +
+                                 h*regdelta/self.cooler_cp(v.regulation)).max(0.);
 
             if v.control {
                 if heatflow * lastflow != -100. {
@@ -81,8 +107,8 @@ impl CryoSimulator {
                 lastflow = heatflow;
 
                 let error = v.setpoint - newregulation;
-                delta = (delta + v.regulation - newregulation) / 2.;
-                let kp = v.k_p / 10.;
+                delta = (delta + v.regulation - newregulation) * 0.5;
+                let kp = v.k_p * 0.1;
                 let ki = kp * v.k_i.abs() / 500.;
                 let kd = kp * v.k_d.abs() / 2.;
 
@@ -102,7 +128,7 @@ impl CryoSimulator {
                 }
 
                 if dtot * last_dtot < -0.2 {
-                    heat_v = (heat_v + v.heater) / 2.;
+                    heat_v = (heat_v + v.heater) * 0.5;
                 }
                 v.heater = clamp(heat_v, 0., 100.);
                 last_dtot = dtot;
