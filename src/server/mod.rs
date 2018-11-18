@@ -123,11 +123,11 @@ impl Dispatcher {
             select! {
                 recv(self.connections) -> res => if let Ok((hid, conn)) = res {
                     // XXX: handlers are never cleaned up at the moment!
-                    info!("dispatcher got handler {}", hid);
+                    // info!("dispatcher got handler {}", hid);
                     self.handlers.insert(hid, conn);
                 },
                 recv(self.requests) -> res => if let Ok((hid, req)) = res {
-                    info!("dispatcher got request {} -> {}", hid, req);
+                    // info!("dispatcher got request {} -> {}", hid, req);
                     match req {
                         Msg::CommandReq { ref module, .. } |
                         Msg::ChangeReq  { ref module, .. } |
@@ -164,7 +164,7 @@ impl Dispatcher {
                     }
                 },
                 recv(self.replies) -> res => if let Ok((hid, rep)) = res {
-                    info!("dispatcher got reply {:?} -> {}", hid, rep);
+                    // info!("dispatcher got reply {:?} -> {}", hid, rep);
                     match hid {
                         None => if let Msg::Update { ref module, .. } = rep {
                             if let Some(set) = self.active.get(&**module) {
