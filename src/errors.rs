@@ -22,7 +22,9 @@
 //
 //! Enumeration of possible SeCOP errors.
 
-use std::{error, fmt};
+use std::{error, fmt, result};
+
+pub type Result<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum ErrorKind {

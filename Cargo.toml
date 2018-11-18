@@ -19,11 +19,11 @@ memchr = "*"
 serde = "*"
 serde_json = "*"
 serde_derive = "*"
-#aho-corasick = "*"
 lazy_static = "*"
 parking_lot = "*"
 chan-signal = "*"
 daemonize = "*"
+derive-new = "*"
 crossbeam-channel = "*"
 
 [dependencies.secop-derive]

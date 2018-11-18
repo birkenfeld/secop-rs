@@ -48,12 +48,16 @@ extern crate serde;
 #[macro_use]
 extern crate serde_json;
 extern crate serde_derive;
-// #[macro_use]
-// extern crate secop_derive;
+#[macro_use]
+extern crate derive_new;
+#[macro_use]
+extern crate secop_derive;
+
 
 mod proto;
 mod server;
 mod module;
+#[macro_use]
 mod types;
 mod errors;
 mod util;

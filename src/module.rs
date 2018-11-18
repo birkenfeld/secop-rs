@@ -44,29 +44,48 @@ use crate::errors::Error;
 use crate::proto::Msg;
 use crate::server::HId;
 
-pub type Config = ();
+pub type Config = (); // TODO
 
-pub trait Module {
-    fn create(config: &Config) -> Self where Self: Sized;
-    fn get_api_description(&self) -> Value;
+/// Data that every module requires.
+#[derive(new)]
+pub struct ModInternals {
+    name: String,
+    req_receiver: Receiver<(HId, Msg)>,
+    rep_sender: Sender<(Option<HId>, Msg)>,
+}
+
+/// Part of the Module trait to be implemented by user.
+pub trait Module : ModuleBase {
+    fn create(config: &Config, internals: ModInternals) -> Self where Self: Sized;
+}
+
+/// Part of the Module trait to be implemented by the derive macro.
+pub trait ModuleBase {
     fn change(&mut self, param: &str, value: Value) -> Result<Value, Error>;
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
     fn trigger(&mut self, param: &str) -> Result<Value, Error>;
+    fn describe(&self) -> Value;
 
-    fn run(mut self,
-           name: String,
-           req_receiver: Receiver<(HId, Msg)>,
-           rep_sender: Sender<(Option<HId>, Msg)>)
-        where Self: Sized
-    {
-        mlzlog::set_thread_prefix("[MOD] ".into()); // TODO need real name
+    fn poll_params(&self) -> &'static [&'static str];
+
+    #[inline]
+    fn internals(&self) -> &ModInternals;
+    #[inline]
+    fn name(&self) -> &str { &self.internals().name }
+    #[inline]
+    fn req_receiver(&self) -> &Receiver<(HId, Msg)> { &self.internals().req_receiver }
+    #[inline]
+    fn rep_sender(&self) -> &Sender<(Option<HId>, Msg)> { &self.internals().rep_sender }
+
+    fn run(mut self) where Self: Sized {
+        mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
         // TODO: decide whether to do polling here or in another thread
         let poll = tick(Duration::from_secs(1));
 
         loop {
             select! {
-                recv(req_receiver) -> res => if let Ok((hid, req)) = res {
+                recv(self.req_receiver()) -> res => if let Ok((hid, req)) = res {
                     let rep = match req {
                         Msg::ChangeReq { module, param, value } => match self.change(&param, value) {
                             Ok(value) => Msg::ChangeRep { module, param, value },
@@ -91,14 +110,15 @@ pub trait Module {
                             continue;
                         }
                     };
-                    rep_sender.send((Some(hid), rep)).unwrap();
+                    self.rep_sender().send((Some(hid), rep)).unwrap();
                 },
                 recv(poll) -> _ => {
-                    for &param in &["value", "setpoint", "status"] {
+                    for &param in self.poll_params() {
+                        // TODO
                         if let Ok(value) = self.trigger(param) {
-                            rep_sender.send((None, Msg::Update { module: name.clone(),
-                                                                 param: param.into(),
-                                                                 value })).unwrap();
+                            self.rep_sender().send((None, Msg::Update { module: self.name().into(),
+                                                                        param: param.into(),
+                                                                        value })).unwrap();
                         }
                     }
                 }

@@ -4,10 +4,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use parking_lot::Mutex;
-use serde_json::Value;
+// use serde_json::Value;
 
-use crate::errors::{Error, ErrorKind};
-use crate::module::{Config, Module};
+use crate::errors::Result;
+use crate::module::{Config, Module, ModInternals};
 use crate::util::localtime;
 
 #[derive(Default)]
@@ -158,27 +158,63 @@ impl CryoSimulator {
 
     /// heatflow from sample to cooler. may be negative...
     fn heat_link(&self, coolertemp: f64, sampletemp: f64) -> f64 {
-        let flow = (sampletemp - coolertemp) * (coolertemp + sampletemp).powi(2)/400.;
+        let flow = (sampletemp - coolertemp) * (coolertemp + sampletemp).powi(2) / 400.;
         let cp = clamp(self.cooler_cp(coolertemp) * self.sample_cp(sampletemp), 1., 10.);
         clamp(flow, -cp, cp)
     }
 
     fn sample_cp(&self, temp: f64) -> f64 {
-        3. * (temp / 30.).atan() + 12. * temp / ((temp - 12.).powi(2) + 10.) + 0.5
+        3.*(temp / 30.).atan() + 12.*temp / ((temp - 12.).powi(2) + 10.) + 0.5
     }
 
     fn sample_leak(&self, temp: f64) -> f64 {
-        0.02/temp
+        0.02 / temp
     }
 }
 
-//#[derive(Module)]
+#[derive(ModuleBase)]
+#[param(name="status", doc="status",
+        datatype="Enum::new().insert(\"IDLE\", 100).insert(\"WARN\", 200).insert(\"UNSTABLE\", 250).insert(\"ERROR\", 400).insert(\"UNKNOWN\", 900)",
+        readonly=true, default="0.0", unit="K")]
+#[param(name="value", doc="regulation temperature",
+        datatype="DoubleFrom(0.0)",
+        readonly=true, default="0.0", unit="K")]
+#[param(name="sample", doc="sample temperature",
+        datatype="DoubleFrom(0.0)",
+        readonly=true, default="0.0", unit="K")]
+#[param(name="target", doc="target temperature",
+        datatype="DoubleFrom(0.0)",
+        readonly=false, default="0.0", unit="K")]
+#[param(name="setpoint", doc="current setpoint for the temperature",
+        datatype="DoubleFrom(0.0)",
+        readonly=true, default="0.0", unit="K")]
+#[param(name="ramp", doc="setpoint ramping speed",
+        datatype="DoubleFromTo(0.0, 1e3)",
+        readonly=false, default="1.0", unit="K/min")]
+#[param(name="heater", doc="current heater setting",
+        datatype="DoubleFromTo(0.0, 100.0)",
+        readonly=true, default="0.0", unit="%")]
+#[param(name="p", doc="regulation coefficient P",
+        datatype="DoubleFrom(0.0)",
+        readonly=false, default="40.0", unit="%/K", group="pid")]
+#[param(name="i", doc="regulation coefficient I",
+        datatype="DoubleFromTo(0.0, 100.0)",
+        readonly=false, default="10.0", group="pid")]
+#[param(name="d", doc="regulation coefficient D",
+        datatype="DoubleFromTo(0.0, 100.0)",
+        readonly=false, default="2.0", group="pid")]
+#[param(name="mode", doc="regulation coefficient D",
+        datatype="Enum::new().add(\"pid\").add(\"openloop\")",
+        readonly=false, default="2.0", group="pid")]
+#[command(name="stop", doc="stop ramping the setpoint",
+          argtype="None", restype="None")]
 pub struct Cryo {
+    internals: ModInternals,
     vars: Arc<Mutex<StateVars>>,
 }
 
 impl Module for Cryo {
-    fn create(config: &Config) -> Self {
+    fn create(config: &Config, internals: ModInternals) -> Self {
         let vars = StateVars { sample: 5.0, regulation: 3.0, control: true,
                                k_p: 50.0, k_i: 10.0, k_d: 0.0,
                                heater: 0.0, ramp: 0.0, ramping: false,
@@ -186,53 +222,34 @@ impl Module for Cryo {
         let vars = Arc::new(Mutex::new(vars));
         let sim = CryoSimulator { vars: Arc::clone(&vars) };
         thread::spawn(move || sim.run());
-        Cryo { vars }
+        Cryo { internals, vars }
     }
 
-    // NOTE: these manual implementations will be replaced by a derive macro
-    // later, which will also provide validation and then call methods in the
-    // form `change_target(value: f64) -> Result`.
-    // The declaration might then be similar to the "parameters" class dict
-    // in Python.
+}
 
-    fn get_api_description(&self) -> Value {
-        // TODO
-        Value::Null
-    }
-    fn change(&mut self, param: &str, value: Value) -> Result<Value, Error> {
-        match param {
-            "target" => if let Some(v) = value.as_f64() { self.vars.lock().target = v; },
-            "ramp" => if let Some(v) = value.as_f64() { self.vars.lock().ramp = v; },
-            "p" => if let Some(v) = value.as_f64() { self.vars.lock().k_p = v; },
-            "i" => if let Some(v) = value.as_f64() { self.vars.lock().k_i = v; },
-            "d" => if let Some(v) = value.as_f64() { self.vars.lock().k_d = v; },
-            // TODO
-            _ => return Err(Error::new(ErrorKind::NoSuchParameter))
-        }
-        Ok(json!([value, {}]))
-    }
-    fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error> {
-        match cmd {
-            "stop" => {
-                let mut v = self.vars.lock();
-                v.target = v.setpoint;
-                Ok(Value::Null)
-            }
-            _ => Err(Error::new(ErrorKind::NoSuchCommand))
-        }
-    }
-    fn trigger(&mut self, param: &str) -> Result<Value, Error> {
-        match param {
-            "value" => Ok(json!([self.vars.lock().regulation, {}])),
-            "setpoint" => Ok(json!([self.vars.lock().setpoint, {}])),
-            "status" => Ok({
-                let is_ramping = self.vars.lock().ramping;
-                if is_ramping { json!([[300, "ramping"], {}]) } else { json!([[100, ""], {}]) }
-            }),
-            "target" => Ok(json!([self.vars.lock().target, {}])),
-            // TODO
-            _ => return Err(Error::new(ErrorKind::NoSuchParameter))
-        }
-    }
+impl Cryo {
+    fn read_value(&self)    -> Result<f64> { Ok(self.vars.lock().regulation) }
+    fn read_sample(&self)   -> Result<f64> { Ok(self.vars.lock().sample) }
+    fn read_target(&self)   -> Result<f64> { Ok(self.vars.lock().target) }
+    fn read_setpoint(&self) -> Result<f64> { Ok(self.vars.lock().setpoint) }
+    fn read_ramp(&self)     -> Result<f64> { Ok(self.vars.lock().ramp) }
+    fn read_heater(&self)   -> Result<f64> { Ok(self.vars.lock().heater) }
+    fn read_p(&self)        -> Result<f64> { Ok(self.vars.lock().k_p) }
+    fn read_i(&self)        -> Result<f64> { Ok(self.vars.lock().k_i) }
+    fn read_d(&self)        -> Result<f64> { Ok(self.vars.lock().k_d) }
+    fn read_mode(&self)     -> Result<i64> { Ok(if self.vars.lock().control { 0 } else { 1 }) }
+    fn read_status(&self)   -> Result<i64> { Ok(if self.vars.lock().ramping { 300 } else { 100 }) }
 
+    fn write_target(&mut self, value: f64) -> Result<()> { Ok(self.vars.lock().target = value) }
+    fn write_ramp(&mut self, value: f64)   -> Result<()> { Ok(self.vars.lock().ramp = value) }
+    fn write_p(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_p = value) }
+    fn write_i(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_i = value) }
+    fn write_d(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_d = value) }
+    fn write_mode(&mut self, value: i64)   -> Result<()> { Ok(self.vars.lock().control = value == 0) }
+
+    fn do_stop(&self, _: ()) -> Result<()> {
+        let mut v = self.vars.lock();
+        v.target = v.setpoint;
+        Ok(())
+    }
 }

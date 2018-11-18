@@ -30,7 +30,7 @@ use memchr::memchr;
 use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver};
 
-use crate::module::Module;
+use crate::module::{Module, ModuleBase, ModInternals};
 use crate::proto::{Msg, Msg::*, IDENT_REPLY};
 use crate::util::localtime;
 
@@ -82,10 +82,11 @@ impl Server {
         let mut mod_senders = HashMap::default();
 
         let (mod_sender, mod_receiver) = unbounded();
-        let mod1 = crate::play::cryo::Cryo::create(&());
-        mod_senders.insert("cryo".into(), mod_sender);
         let mod_rep_sender = rep_sender.clone();
-        thread::spawn(move || mod1.run("cryo".into(), mod_receiver, mod_rep_sender));
+        let int = ModInternals::new("cryo".into(), mod_receiver, mod_rep_sender);
+        let mod1 = crate::play::cryo::Cryo::create(&(), int);
+        mod_senders.insert("cryo".into(), mod_sender);
+        thread::spawn(|| mod1.run());
 
         // create the dispatcher
         let dispatcher = Dispatcher {
