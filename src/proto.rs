@@ -70,7 +70,7 @@ pub enum Msg {
     /// event disable reply
     EventDisableRep { module: Str },
     /// command execution request
-    CommandReq { module: Str, command: Str, args: Value },
+    CommandReq { module: Str, command: Str, arg: Value },
     /// command result
     CommandRep { module: Str, command: Str, result: Value },
     /// change request
@@ -141,7 +141,7 @@ impl Msg {
                 wire::PING =>       Ok(PingReq { token: spec1 }),
                 wire::PONG =>       Ok(PingRep { token: spec1, data: data }),
                 wire::ERROR =>      Ok(ErrorRep { class: spec1, report: data }),
-                wire::DO =>         Ok(CommandReq { module: spec1, command: spec2.expect("XXX"), args: data }),
+                wire::DO =>         Ok(CommandReq { module: spec1, command: spec2.expect("XXX"), arg: data }),
                 wire::DONE =>       Ok(CommandRep { module: spec1, command: spec2.expect("XXX"), result: data }),
                 wire::CHANGE =>     Ok(ChangeReq { module: spec1, param: spec2.expect("XXX"), value: data }),
                 wire::CHANGED =>    Ok(ChangeRep { module: spec1, param: spec2.expect("XXX"), value: data }),
@@ -184,8 +184,8 @@ impl fmt::Display for Msg {
             EventDisableRep { module } =>
                 if module.is_empty() { f.write_str(wire::INACTIVE) }
                 else { write!(f, "{} {}", wire::INACTIVE, module) },
-            CommandReq { module, command, args } =>
-                write!(f, "{} {}:{} {}", wire::DO, module, command, args),
+            CommandReq { module, command, arg } =>
+                write!(f, "{} {}:{} {}", wire::DO, module, command, arg),
             CommandRep { module, command, result } =>
                 write!(f, "{} {}:{} {}", wire::DONE, module, command, result),
             ChangeReq { module, param, value } =>

@@ -74,7 +74,7 @@ pub trait Module {
                                                       // TODO
                                                       report: json!(["your request", "ERR", {}]) }
                         },
-                        Msg::CommandReq { module, command, args } => match self.command(&command, args) {
+                        Msg::CommandReq { module, command, arg } => match self.command(&command, arg) {
                             Ok(result) => Msg::CommandRep { module, command, result },
                             Err(e) => Msg::ErrorRep { class: "Error".into(),
                                                       // TODO

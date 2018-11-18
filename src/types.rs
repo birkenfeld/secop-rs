@@ -42,7 +42,7 @@ pub enum TypeDesc {
     ArrayOf(Box<TypeDesc>, Lim<usize>),
     TupleOf(Vec<TypeDesc>),
     StructOf(HashMap<String, TypeDesc>),
-    Command(Vec<TypeDesc>, Box<TypeDesc>),
+    Command(Box<TypeDesc>, Box<TypeDesc>),
 }
 
 // impl TypeDesc {
@@ -91,9 +91,9 @@ impl Serialize for TypeDesc {
                 seq.serialize_element("struct")?;
                 seq.serialize_element(subtypes)?;
             }
-            TypeDesc::Command(argtypes, restype) => {
+            TypeDesc::Command(argtype, restype) => {
                 seq.serialize_element("command")?;
-                seq.serialize_element(argtypes)?;
+                seq.serialize_element(argtype)?;
                 seq.serialize_element(restype)?;
             }
         }
