@@ -22,19 +22,18 @@
 //
 //! This module contains the server instance itself.
 
-mod handler;
-
 // XXX: use fxhash
 use std::collections::{HashMap, HashSet};
+use std::io::{self, prelude::*};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
-use std::io;
-use std::net::{SocketAddr, TcpListener};
 use std::thread;
+use memchr::memchr;
 use crossbeam_channel::{unbounded, Sender, Receiver};
 
-use self::handler::Handler;
 use crate::module::Module;
-use crate::proto::Msg;
+use crate::proto::{Msg, Msg::*, IDENT_REPLY};
+use crate::util::localtime;
 
 pub const RECVBUF_LEN: usize = 4096;
 
@@ -129,14 +128,14 @@ impl Dispatcher {
                 recv(self.requests) -> res => if let Ok((hid, req)) = res {
                     // info!("dispatcher got request {} -> {}", hid, req);
                     match req {
-                        Msg::CommandReq { ref module, .. } |
-                        Msg::ChangeReq  { ref module, .. } |
-                        Msg::TriggerReq { ref module, .. } => {
+                        CommandReq { ref module, .. } |
+                        ChangeReq  { ref module, .. } |
+                        TriggerReq { ref module, .. } => {
                             if let Some(chan) = self.modules.get(&**module) {
                                 chan.send((hid, req)).unwrap();
                             }
                         }
-                        Msg::EventEnableReq { module } => {
+                        EventEnableReq { module } => {
                             if !module.is_empty() {
                                 self.active.entry(module.clone()).or_default().insert(hid);
                             } else {
@@ -144,9 +143,9 @@ impl Dispatcher {
                                     self.active.entry(module.clone()).or_default().insert(hid);
                                 }
                             }
-                            self.handlers[&hid].send(format!("{}\n", Msg::EventEnableRep { module })).unwrap();
+                            self.handlers[&hid].send(format!("{}\n", EventEnableRep { module })).unwrap();
                         }
-                        Msg::EventDisableReq { module } => {
+                        EventDisableReq { module } => {
                             if !module.is_empty() {
                                 self.active.entry(module.clone()).or_default().remove(&hid);
                             } else {
@@ -154,9 +153,9 @@ impl Dispatcher {
                                     self.active.entry(module.clone()).or_default().remove(&hid);
                                 }
                             }
-                            self.handlers[&hid].send(format!("{}\n", Msg::EventDisableRep { module })).unwrap();
+                            self.handlers[&hid].send(format!("{}\n", EventDisableRep { module })).unwrap();
                         }
-                        Msg::DescribeReq => {
+                        DescribeReq => {
                             // TODO
                             self.handlers[&hid].send(format!("XXX\n")).unwrap();
                         }
@@ -166,7 +165,7 @@ impl Dispatcher {
                 recv(self.replies) -> res => if let Ok((hid, rep)) = res {
                     // info!("dispatcher got reply {:?} -> {}", hid, rep);
                     match hid {
-                        None => if let Msg::Update { ref module, .. } = rep {
+                        None => if let Update { ref module, .. } = rep {
                             if let Some(set) = self.active.get(&**module) {
                                 for hid in set {
                                     self.handlers[hid].send(format!("{}\n", rep)).unwrap();
@@ -180,5 +179,113 @@ impl Dispatcher {
                 }
             }
         }
+    }
+}
+
+
+pub struct Handler {
+    hid: HId,
+    addr: ClientAddr,
+    client: TcpStream,
+    req_sender: Sender<(HId, Msg)>,
+    rep_sender: Sender<String>,
+}
+
+impl Handler {
+    pub fn new(hid: HId, client: TcpStream, addr: ClientAddr,
+               req_sender: Sender<(HId, Msg)>,
+               rep_sender: Sender<String>, rep_receiver: Receiver<String>) -> Handler {
+        // spawn a thread that handles sending replies and events back
+        let send_client = client.try_clone().expect("could not clone socket");
+        let thread_name = addr.to_string();
+        thread::spawn(move || Handler::sender(&thread_name, send_client, rep_receiver));
+        mlzlog::set_thread_prefix(format!("[{}] ", addr));
+        Handler { hid, addr, client, req_sender, rep_sender }
+    }
+
+    /// Thread that sends back replies and events to the client.
+    fn sender(name: &str, mut client: TcpStream, rep_receiver: Receiver<String>) {
+        mlzlog::set_thread_prefix(format!("[{}] ", name));
+        for to_send in rep_receiver {
+            if let Err(err) = client.write_all(to_send.as_bytes()) {
+                warn!("write error in sender: {}", err);
+                break;
+            }
+        }
+        info!("sender quit");
+    }
+
+    fn send_back(&self, msg: Msg) {
+        self.rep_sender.send(format!("{}\n", msg)).expect("sending to client failed");
+    }
+
+    fn handle_msg(&self, msg: Msg) {
+        match msg {
+            ChangeReq { .. } | CommandReq { .. } | TriggerReq { .. } | DescribeReq |
+            EventEnableReq { .. } | EventDisableReq { .. } => {
+                self.req_sender.send((self.hid, msg)).unwrap();
+            }
+            PingReq { token } => {
+                let data = json!([null, {"t": localtime()}]);
+                self.send_back(PingRep { token, data });
+            }
+            IdentReq => {
+                self.send_back(IdentRep { encoded: IDENT_REPLY.into() });
+            }
+            _ => {
+                warn!("message {:?} not handled yet", msg);
+            }
+        }
+    }
+
+    /// Process a single line (message).
+    fn process(&self, line: &str) -> bool {
+        match Msg::parse(line) {
+            Ok(msg) => {
+                debug!("processing {:?} => {:?}", line, msg);
+                self.handle_msg(msg);
+                true
+            }
+            Err(msg) => {
+                // error while parsing: this will be an ErrorRep
+                warn!("failed to parse line: {:?} - {}", line, msg);
+                self.send_back(msg);
+                true
+            }
+        }
+    }
+
+    /// Handle incoming stream of messages.
+    pub fn handle(mut self) {
+        let mut buf = Vec::with_capacity(RECVBUF_LEN);
+        let mut recvbuf = [0u8; RECVBUF_LEN];
+
+        'outer: loop {
+            // read a chunk of incoming data
+            let got = match self.client.read(&mut recvbuf) {
+                Err(err) => {
+                    warn!("error in recv(): {}", err);
+                    break;
+                },
+                Ok(0)    => break,  // no data from blocking read...
+                Ok(got)  => got,
+            };
+            // convert to string and add to our buffer
+            buf.extend_from_slice(&recvbuf[..got]);
+            // process all whole lines we got
+            let mut from = 0;
+            while let Some(to) = memchr(b'\n', &buf[from..]) {
+                // note, this won't allocate a new String if valid UTF-8
+                let line_str = String::from_utf8_lossy(&buf[from..from+to]);
+                let line_str = line_str.trim_right_matches('\r');
+                if !self.process(line_str) {
+                    // false return value means "quit"
+                    break 'outer;
+                }
+                from += to + 1;
+            }
+            buf.drain(..from);
+        }
+        info!("handler is finished");
     }
 }
