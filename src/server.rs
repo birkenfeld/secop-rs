@@ -94,14 +94,14 @@ impl Server {
             let (mod_sender, mod_receiver) = unbounded();
             // replies go via a single one
             let mod_rep_sender = rep_sender.clone();
-            let int = ModInternals::new(name.clone(), mod_receiver, mod_rep_sender);
+            let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender);
             mod_senders.insert(name, mod_sender);
-            module_desc.push(play::run_module(modcfg, int).expect("TODO handle me"));
+            module_desc.push(play::run_module(int).expect("TODO handle me"));
         }
 
         let descriptive = json!({
-            "description": "TODO",
-            "equipment_id": "TODO",
+            "description": self.config.description,
+            "equipment_id": self.config.equipment_id,
             "firmware": "secop-rs",
             "modules": module_desc
         });

@@ -37,13 +37,20 @@ use crate::server::HId;
 #[derive(new)]
 pub struct ModInternals {
     name: String,
+    config: ModuleConfig,
     req_receiver: Receiver<(HId, Msg)>,
     rep_sender: Sender<(Option<HId>, Msg)>,
 }
 
+impl ModInternals {
+    pub fn class(&self) -> &str {
+        &self.config.class
+    }
+}
+
 /// Part of the Module trait to be implemented by user.
 pub trait Module : ModuleBase {
-    fn create(config: ModuleConfig, internals: ModInternals) -> Self where Self: Sized;
+    fn create(internals: ModInternals) -> Self where Self: Sized;
 }
 
 /// Part of the Module trait to be implemented by the derive macro.
@@ -59,6 +66,8 @@ pub trait ModuleBase {
     fn internals(&self) -> &ModInternals;
     #[inline]
     fn name(&self) -> &str { &self.internals().name }
+    #[inline]
+    fn config(&self) -> &ModuleConfig { &self.internals().config }
     #[inline]
     fn req_receiver(&self) -> &Receiver<(HId, Msg)> { &self.internals().req_receiver }
     #[inline]

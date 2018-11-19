@@ -30,8 +30,7 @@ use log::*;
 use parking_lot::Mutex;
 use secop_derive::ModuleBase;
 
-// These will later be put into a "core" or "prelude" type export module.
-use crate::config::ModuleConfig;
+// These should later be put into a "core" or "prelude" type export module.
 use crate::errors::Result;
 use crate::module::{Module, ModInternals};
 use crate::util::localtime;
@@ -243,7 +242,7 @@ pub struct Cryo {
 }
 
 impl Module for Cryo {
-    fn create(config: ModuleConfig, internals: ModInternals) -> Self {
+    fn create(internals: ModInternals) -> Self {
         let vars = StateVars { sample: 5.0, regulation: 3.0, control: true,
                                k_p: 50.0, k_i: 10.0, k_d: 0.0,
                                heater: 0.0, ramp: 0.0, ramping: false,

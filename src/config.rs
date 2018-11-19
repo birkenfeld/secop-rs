@@ -29,6 +29,9 @@ use toml;
 
 #[derive(Deserialize)]
 pub struct ServerConfig {
+    pub description: String,
+    #[serde(skip)]
+    pub equipment_id: String,
     pub modules: Vec<ModuleConfig>,
 }
 
@@ -36,11 +39,16 @@ pub struct ServerConfig {
 pub struct ModuleConfig {
     pub name: String,
     pub class: String,
+    pub description: String,
+    pub group: Option<String>,
 }
 
 
 pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
-    let data = std::fs::read(filename).map_err(|e| e.to_string())?;
-    let obj = toml::from_slice(&data).map_err(|e| e.to_string())?;
+    let data = std::fs::read(&filename).map_err(|e| e.to_string())?;
+    let mut obj: ServerConfig = toml::from_slice(&data).map_err(|e| e.to_string())?;
+    obj.equipment_id = filename.as_ref()
+                               .file_stem()
+                               .map_or("unknown".into(), |s| s.to_string_lossy().into_owned());
     Ok(obj)
 }

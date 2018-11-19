@@ -177,11 +177,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                     #( #descriptive )*
                 ];
                 json!([self.name(), {
-                    // "description": "TODO",
+                    "description": self.config().description,
                     // "visibility": "TODO",
                     // "interface_class": "TODO",
                     // "features": ["TODO"],
-                    // "group": "TODO",
+                    "group": self.config().group,
                     "accessibles": accessibles
                 }])
             }
