@@ -21,13 +21,13 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! SeCOP data type definitions.
+//! SECoP data type definitions.
 
 use std::string::String as StdString;
 use fxhash::FxHashMap as HashMap;
 use serde_json::{Value, json};
 
-/// Represents a defined SeCOP data type usable for parameters and command
+/// Represents a defined SECoP data type usable for parameters and command
 /// arguments/results.
 ///
 /// The Repr associated type should be set to a Rust type that can hold all
@@ -35,7 +35,7 @@ use serde_json::{Value, json};
 /// using `from_repr` and `to_repr`.
 ///
 /// On conversion error, the incoming JSON Value is simply returned, and the
-/// caller is responsible for raising the correct SeCOP error.
+/// caller is responsible for raising the correct SECoP error.
 pub trait TypeDesc {
     type Repr;
     /// Return a JSON-serialized description of the data type.

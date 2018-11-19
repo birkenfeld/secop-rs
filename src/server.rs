@@ -32,7 +32,7 @@ use memchr::memchr;
 use derive_new::new;
 use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver, select};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::config::ServerConfig;
 use crate::module::ModInternals;
@@ -86,6 +86,7 @@ impl Server {
 
         // create the modules
         let mut mod_senders = HashMap::default();
+        let mut module_desc = Vec::new();
 
         for modcfg in self.config.modules.drain(..) {
             let name = modcfg.name.clone();
@@ -95,11 +96,19 @@ impl Server {
             let mod_rep_sender = rep_sender.clone();
             let int = ModInternals::new(name.clone(), mod_receiver, mod_rep_sender);
             mod_senders.insert(name, mod_sender);
-            play::run_module(modcfg, int).expect("TODO handle me");
+            module_desc.push(play::run_module(modcfg, int).expect("TODO handle me"));
         }
+
+        let descriptive = json!({
+            "description": "TODO",
+            "equipment_id": "TODO",
+            "firmware": "secop-rs",
+            "modules": module_desc
+        });
 
         // create the dispatcher
         let dispatcher = Dispatcher {
+            descriptive: descriptive,
             handlers: HashMap::default(),
             active: HashMap::default(),
             modules: mod_senders,
@@ -119,6 +128,7 @@ impl Server {
 /// The dispatcher acts as a central piece connected to both modules and clients,
 /// all via channels.
 struct Dispatcher {
+    descriptive: Value,
     handlers: HashMap<HId, Sender<String>>,
     active: HashMap<String, HashSet<HId>>,
     modules: HashMap<String, Sender<(HId, Msg)>>,
@@ -167,8 +177,10 @@ impl Dispatcher {
                             self.handlers[&hid].send(format!("{}\n", EventDisableRep { module })).unwrap();
                         }
                         DescribeReq => {
-                            // TODO
-                            self.handlers[&hid].send(format!("XXX\n")).unwrap();
+                            self.handlers[&hid].send(format!("{}\n", DescribeRep {
+                                id: ".".into(),
+                                desc: self.descriptive.clone()
+                            })).unwrap();
                         }
                         Quit => {
                             self.handlers.remove(&hid);

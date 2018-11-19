@@ -20,7 +20,7 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! Derive TypeDesc for structs to be used as SeCOP Struct types.
+//! Derive TypeDesc for structs to be used as SECoP Struct types.
 
 use quote::quote;
 

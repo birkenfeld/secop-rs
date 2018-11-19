@@ -20,7 +20,7 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! Enumeration of possible SeCOP errors.
+//! Enumeration of possible SECoP errors.
 
 use std::{error, fmt, result};
 
