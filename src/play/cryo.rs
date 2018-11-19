@@ -66,7 +66,7 @@ fn sleep_ms(v: u64) { thread::sleep(Duration::from_millis(v)) }
 impl CryoSimulator {
     fn run(self) {
         const LOOPDELAY: f64 = 1.0;
-        const MAXPOWER: f64 = 100.0;
+        const MAXPOWER: f64 = 10.0;
 
         mlzlog::set_thread_prefix("[CryoSim] ".into());
 
@@ -91,8 +91,6 @@ impl CryoSimulator {
             let mut v = self.vars.lock();
 
             let heatflow = self.heat_link(v.regulation, v.sample);
-            info!("sample = {:.5}, regulation = {:.5}, heatflow = {:.5}",
-                   v.sample, v.regulation, heatflow);
             let newsample = (v.sample + h*(self.sample_leak(v.sample) -
                                            heatflow)/self.sample_cp(v.sample)).max(0.);
             let newsample = clamp(newsample, v.sample, v.regulation);
@@ -100,6 +98,8 @@ impl CryoSimulator {
                 self.cooler_power(v.regulation);
             let newregulation = (v.regulation +
                                  h*regdelta/self.cooler_cp(v.regulation)).max(0.);
+            info!("sample = {:.5}, regulation = {:.5}, heatflow = {:.5}",
+                   newsample, newregulation, heatflow);
 
             if v.control {
                 if heatflow * lastflow != -100. {
@@ -240,19 +240,19 @@ struct PID {
         datatype="DoubleFromTo(0.0, 100.0)",
         readonly=true, default="0.0", unit="%")]
 #[param(name="pid", doc="regulation coefficients",
-        datatype="PIDType",
+        datatype="PIDType", polling="0",
         readonly=false, group="pid")]
 #[param(name="p", doc="regulation coefficient P",
-        datatype="DoubleFrom(0.0)",
+        datatype="DoubleFrom(0.0)", polling="-5",
         readonly=false, default="40.0", unit="%/K", group="pid")]
 #[param(name="i", doc="regulation coefficient I",
-        datatype="DoubleFromTo(0.0, 100.0)",
+        datatype="DoubleFromTo(0.0, 100.0)", polling="-5",
         readonly=false, default="10.0", group="pid")]
 #[param(name="d", doc="regulation coefficient D",
-        datatype="DoubleFromTo(0.0, 100.0)",
+        datatype="DoubleFromTo(0.0, 100.0)", polling="-5",
         readonly=false, default="2.0", group="pid")]
-#[param(name="mode", doc="regulation coefficient D",
-        datatype="ModeType",
+#[param(name="mode", doc="regulation mode",
+        datatype="ModeType", polling="0",
         readonly=false, default="2.0", group="pid")]
 #[command(name="stop", doc="stop ramping the setpoint",
           argtype="None", restype="None")]
@@ -264,7 +264,7 @@ pub struct Cryo {
 impl Module for Cryo {
     fn create(internals: ModInternals) -> Self {
         let vars = StateVars { sample: 5.0, regulation: 3.0, control: true,
-                               k_p: 50.0, k_i: 10.0, k_d: 0.0,
+                               k_p: 40.0, k_i: 10.0, k_d: 2.0,
                                heater: 0.0, ramp: 0.0, ramping: false,
                                target: 0.0, setpoint: 0.0 };
         let vars = Arc::new(Mutex::new(vars));

@@ -27,6 +27,8 @@ use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use darling::FromMeta;
 
+fn default_polling() -> i64 { 1 }
+
 /// Representation of the #[param(...)] attribute.
 #[derive(FromMeta, Debug)]
 struct SecopParam {
@@ -40,6 +42,8 @@ struct SecopParam {
     unit: String,
     #[darling(default)]
     group: String,
+    #[darling(default = "default_polling")]
+    polling: i64,
 }
 
 /// Representation of the #[command(...)] attribute.
@@ -87,7 +91,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut descriptive = vec![];
 
     for p in params {
-        let SecopParam { name, doc, readonly, datatype, unit, group, .. } = p;
+        // TODO: process default
+        let SecopParam { name, doc, readonly, datatype, unit, group, polling, .. } = p;
         let type_static = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
         let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
         let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
@@ -114,7 +119,9 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 }
             }
         });
-        poll_params.push(name.to_string());
+        if polling != 0 {
+            poll_params.push(name.to_string());
+        }
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
         let group_entry = if !group.is_empty() { quote! { "group": #group, } } else { quote! {} };
         descriptive.push(quote! {

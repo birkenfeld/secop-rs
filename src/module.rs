@@ -76,7 +76,7 @@ pub trait ModuleBase {
     fn run(mut self) where Self: Sized {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
-        // TODO: decide whether to do polling here or in another thread
+        // TODO: customizable poll interval
         let poll = tick(Duration::from_secs(1));
 
         loop {
@@ -113,14 +113,14 @@ pub trait ModuleBase {
                 },
                 recv(poll) -> _ => {
                     for &param in self.poll_params() {
-                        // TODO
+                        // TODO remember previous values
                         if let Ok(value) = self.trigger(param) {
                             self.rep_sender().send((None, Msg::Update { module: self.name().into(),
                                                                         param: param.into(),
                                                                         value })).unwrap();
                         }
                     }
-                }
+                },
             }
         }
     }
