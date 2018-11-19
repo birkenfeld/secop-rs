@@ -207,6 +207,16 @@ enum Mode {
     OpenLoop,
 }
 
+#[derive(TypeDesc)]
+struct PID {
+    #[datatype="DoubleFrom(0.0)"]
+    p: f64,
+    #[datatype="DoubleFrom(0.0)"]
+    i: f64,
+    #[datatype="DoubleFrom(0.0)"]
+    d: f64,
+}
+
 #[derive(ModuleBase)]
 #[param(name="status", doc="status",
         datatype="StatusType",
@@ -229,6 +239,9 @@ enum Mode {
 #[param(name="heater", doc="current heater setting",
         datatype="DoubleFromTo(0.0, 100.0)",
         readonly=true, default="0.0", unit="%")]
+#[param(name="pid", doc="regulation coefficients",
+        datatype="PIDType",
+        readonly=false, group="pid")]
 #[param(name="p", doc="regulation coefficient P",
         datatype="DoubleFrom(0.0)",
         readonly=false, default="40.0", unit="%/K", group="pid")]
@@ -272,6 +285,10 @@ impl Cryo {
     fn read_p(&self)        -> Result<f64> { Ok(self.vars.lock().k_p) }
     fn read_i(&self)        -> Result<f64> { Ok(self.vars.lock().k_i) }
     fn read_d(&self)        -> Result<f64> { Ok(self.vars.lock().k_d) }
+    fn read_pid(&self)      -> Result<PID> {
+        let v = self.vars.lock();
+        Ok(PID { p: v.k_p, i: v.k_i, d: v.k_d })
+    }
     fn read_mode(&self)     -> Result<Mode> {
         Ok(if self.vars.lock().control { Mode::PID } else { Mode::OpenLoop })
     }
@@ -289,6 +306,14 @@ impl Cryo {
     fn write_i(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_i = value) }
     fn write_d(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_d = value) }
     fn write_mode(&mut self, value: Mode)  -> Result<()> { Ok(self.vars.lock().control = value == Mode::PID) }
+
+    fn write_pid(&mut self, value: PID) -> Result<()> {
+        let mut v = self.vars.lock();
+        v.k_p = value.p;
+        v.k_i = value.i;
+        v.k_d = value.d;
+        Ok(())
+    }
 
     fn do_stop(&self, _: ()) -> Result<()> {
         let mut v = self.vars.lock();

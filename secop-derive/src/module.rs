@@ -22,11 +22,10 @@
 //
 //! Derive a SECoP Module implementation for individual modules.
 
-use darling::FromMeta;
-use syn::{Expr, Ident};
-use syn::spanned::Spanned;
+use syn::{Expr, Ident, spanned::Spanned};
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
+use darling::FromMeta;
 
 /// Representation of the #[param(...)] attribute.
 #[derive(FromMeta, Debug)]

@@ -22,9 +22,10 @@
 //
 //! Derive a TypeDesc for structs to be used as SECoP Struct types.
 
-use syn::Ident;
+use syn::{Ident, Expr};
 use proc_macro2::Span;
 use quote::quote;
+use darling::FromMeta;
 
 
 pub fn derive_typedesc(input: synstructure::Structure) -> proc_macro2::TokenStream {
@@ -41,17 +42,54 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
     let const_name = Ident::new(&format!("_DERIVE_TypeDesc_{}", name), Span::call_site());
     let struct_name = Ident::new(&format!("{}Type", name), Span::call_site());
 
-    let mut descr_members = vec![quote!()];
-    // let mut str_arms = Vec::new();
-    // let mut int_arms = Vec::new();
+    let mut statics = Vec::new();
+    let mut members = Vec::new();
+    let mut member_from_repr = Vec::new();
+    let mut member_contains = Vec::new();
+    let mut member_to_repr = Vec::new();
+    let mut descr_members = Vec::new();
+
+    for binding in input.variants()[0].bindings() {
+        let ident = &binding.ast().ident.as_ref().unwrap_or_else(
+            || panic!("TypeDesc cannot be derived for tuple structs"));
+        let ident_str = ident.to_string();
+        let dtype_static = Ident::new(&format!("STRUCT_FIELD_{}", ident_str), Span::call_site());
+        let mut dtype = None;
+        for attr in &binding.ast().attrs {
+            if attr.path.segments[0].ident == "datatype" {
+                dtype = attr.interpret_meta();
+            }
+        }
+        let dtype = dtype.unwrap_or_else(
+            || panic!("member {} has no valid datatype attribute", ident_str));
+        let dtype = String::from_meta(&dtype).unwrap_or_else(
+            |e| panic!("member {} has no valid datatype attribute: {}", ident_str, e));
+        let dtype_expr = syn::parse_str::<Expr>(&dtype).unwrap_or_else(
+            |_| panic!("member {} has no valid datatype attribute", ident_str));
+
+        statics.push(quote! {
+            static ref #dtype_static : datatype_type!(#dtype_expr) = #dtype_expr;
+        });
+        members.push(quote! { #ident, });
+        member_from_repr.push(quote! { #ident_str: #dtype_static.from_repr(#ident), });
+        member_contains.push(quote! { !obj.contains_key(#ident_str) });
+        member_to_repr.push(quote! {
+            #ident: #dtype_static.to_repr(obj.remove(#ident_str).unwrap())?,
+        });
+        descr_members.push(quote! { #ident_str: #dtype_static.as_json(), });
+    }
 
     let generated = quote! {
         #vis struct #struct_name;
 
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
-            extern crate serde_json;
             use serde_json::{json, Value};
+            use lazy_static::lazy_static;
+
+            lazy_static! {
+                #( #statics )*
+            }
 
             impl crate::types::TypeDesc for #struct_name {
                 type Repr = #name;
@@ -59,10 +97,20 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
                     json!(["struct", { #( #descr_members )* }])
                 }
                 fn from_repr(&self, val: Self::Repr) -> Value {
-                    unimplemented!()
+                    let #name { #( #members )* } = val;
+                    json!({ #( #member_from_repr )* })
                 }
                 fn to_repr(&self, val: Value) -> std::result::Result<Self::Repr, Value> {
-                    unimplemented!()
+                    if let Value::Object(mut obj) = val {
+                        if #( #member_contains )||* {
+                            return Err(Value::Object(obj));
+                        }
+                        Ok(#name {
+                            #( #member_to_repr )*
+                        })
+                    } else {
+                        Err(val)
+                    }
                 }
             }
         };
@@ -104,7 +152,6 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
 
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
-            extern crate serde_json;
             use serde_json::{json, Value};
 
             impl crate::types::TypeDesc for #struct_name {
