@@ -28,12 +28,13 @@ use std::thread;
 use std::time::Duration;
 use log::*;
 use parking_lot::Mutex;
-use secop_derive::ModuleBase;
+use secop_derive::{ModuleBase, TypeDesc};
 
 // These should later be put into a "core" or "prelude" type export module.
 use crate::errors::Result;
 use crate::module::{Module, ModInternals};
 use crate::util::localtime;
+use crate::types::*;
 
 #[derive(Default)]
 struct StateVars {
@@ -200,9 +201,15 @@ impl CryoSimulator {
     }
 }
 
+#[derive(TypeDesc, PartialEq)]
+enum Mode {
+    PID,
+    OpenLoop,
+}
+
 #[derive(ModuleBase)]
 #[param(name="status", doc="status",
-        datatype="Enum::new().insert(\"IDLE\", 100).insert(\"WARN\", 200).insert(\"UNSTABLE\", 250).insert(\"ERROR\", 400).insert(\"UNKNOWN\", 900)",
+        datatype="StatusType",
         readonly=true, default="0.0", unit="K")]
 #[param(name="value", doc="regulation temperature",
         datatype="DoubleFrom(0.0)",
@@ -232,7 +239,7 @@ impl CryoSimulator {
         datatype="DoubleFromTo(0.0, 100.0)",
         readonly=false, default="2.0", group="pid")]
 #[param(name="mode", doc="regulation coefficient D",
-        datatype="Enum::new().add(\"pid\").add(\"openloop\")",
+        datatype="ModeType",
         readonly=false, default="2.0", group="pid")]
 #[command(name="stop", doc="stop ramping the setpoint",
           argtype="None", restype="None")]
@@ -265,15 +272,23 @@ impl Cryo {
     fn read_p(&self)        -> Result<f64> { Ok(self.vars.lock().k_p) }
     fn read_i(&self)        -> Result<f64> { Ok(self.vars.lock().k_i) }
     fn read_d(&self)        -> Result<f64> { Ok(self.vars.lock().k_d) }
-    fn read_mode(&self)     -> Result<i64> { Ok(if self.vars.lock().control { 0 } else { 1 }) }
-    fn read_status(&self)   -> Result<i64> { Ok(if self.vars.lock().ramping { 300 } else { 100 }) }
+    fn read_mode(&self)     -> Result<Mode> {
+        Ok(if self.vars.lock().control { Mode::PID } else { Mode::OpenLoop })
+    }
+    fn read_status(&self)   -> Result<Status> {
+        Ok(if self.vars.lock().ramping {
+            (StatusConst::Busy, "ramping".into())
+        } else {
+            (StatusConst::Idle, "idle".into())
+        })
+    }
 
     fn write_target(&mut self, value: f64) -> Result<()> { Ok(self.vars.lock().target = value) }
     fn write_ramp(&mut self, value: f64)   -> Result<()> { Ok(self.vars.lock().ramp = value) }
     fn write_p(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_p = value) }
     fn write_i(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_i = value) }
     fn write_d(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_d = value) }
-    fn write_mode(&mut self, value: i64)   -> Result<()> { Ok(self.vars.lock().control = value == 0) }
+    fn write_mode(&mut self, value: Mode)  -> Result<()> { Ok(self.vars.lock().control = value == Mode::PID) }
 
     fn do_stop(&self, _: ()) -> Result<()> {
         let mut v = self.vars.lock();

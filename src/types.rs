@@ -26,6 +26,7 @@
 use std::string::String as StdString;
 use fxhash::FxHashMap as HashMap;
 use serde_json::{Value, json};
+use secop_derive::TypeDesc;
 
 /// Represents a defined SECoP data type usable for parameters and command
 /// arguments/results.
@@ -179,6 +180,10 @@ impl TypeDesc for StringUpto {
 }
 
 
+/// A generic enum.  On the Rust side, this is represented as an untyped i64.
+///
+/// You should prefer implementing your own enum class and deriving `TypeDesc`
+/// for it using secop-derive.
 pub struct Enum(pub HashMap<StdString, i64>);
 
 impl TypeDesc for Enum {
@@ -224,31 +229,6 @@ impl<T: TypeDesc> TypeDesc for ArrayOfUpto<T> {
 }
 
 
-/*
-
-TODO
-
-pub struct TupleOf(Vec<Box<dyn TypeDesc>>);
-
-impl TypeDesc for TupleOf {
-    fn as_json(&self) -> Value {
-        let subtypes = self.0.iter().map(|t| t.as_json()).collect::<Vec<_>>();
-        json!(["tuple", subtypes])
-    }
-}
-
-
-pub struct StructOf(HashMap<StdString, Box<dyn TypeDesc>>);
-
-impl TypeDesc for StructOf {
-    fn as_json(&self) -> Value {
-        let subtypes = self.0.iter().map(|(k, v)| (k, v.as_json()))
-                                    .collect::<HashMap<_, _>>();
-        json!(["struct", subtypes])
-    }
-}
-*/
-
 pub struct Command<A: TypeDesc, R: TypeDesc>(pub A, pub R);
 
 impl<A: TypeDesc, R: TypeDesc> TypeDesc for Command<A, R> {
@@ -257,6 +237,43 @@ impl<A: TypeDesc, R: TypeDesc> TypeDesc for Command<A, R> {
     fn from_repr(&self, val: Self::Repr) -> Value { unimplemented!() }
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> { unimplemented!() }
 }
+
+
+macro_rules! impl_tuple {
+    ($name:tt => $($tv:tt),* : $len:tt : $($idx:tt),*) => {
+        pub struct $name<$($tv: TypeDesc),*>($(pub $tv),*);
+
+        impl<$($tv: TypeDesc),*> TypeDesc for $name<$($tv),*> {
+            type Repr = ($($tv::Repr),*);
+            fn as_json(&self) -> Value {
+                json!(["tuple", $(self.$idx.as_json()),*])
+            }
+            fn from_repr(&self, val: Self::Repr) -> Value {
+                json!([ $(self.$idx.from_repr(val.$idx)),* ])
+            }
+            fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+                if let Value::Array(arr) = val {
+                    if arr.len() == $len {
+                        let mut iter = arr.into_iter();
+                        return Ok((
+                            $(self.$idx.to_repr(iter.next().expect("len is checked"))?),*
+                        ));
+                    } else {
+                        Err(Value::Array(arr))
+                    }
+                } else {
+                    Err(val)
+                }
+            }
+        }
+    }
+}
+
+impl_tuple!(Tuple2 => T1, T2 : 2 : 0, 1);
+impl_tuple!(Tuple3 => T1, T2, T3 : 3 : 0, 1, 2);
+impl_tuple!(Tuple4 => T1, T2, T3, T4 : 4 : 0, 1, 2, 3);
+impl_tuple!(Tuple5 => T1, T2, T3, T4, T5 : 5 : 0, 1, 2, 3, 4);
+impl_tuple!(Tuple6 => T1, T2, T3, T4, T5, T6 : 6 : 0, 1, 2, 3, 4, 5);
 
 
 // Helpers for easy Enum creation
@@ -278,62 +295,50 @@ impl Enum {
     }
 }
 
+// The Status enum, and predefined type.
+
+#[derive(TypeDesc)]
+pub enum StatusConst {
+    Idle = 100,
+    Warn = 200,
+    Unstable = 250,
+    Busy = 300,
+    Error = 400,
+    Unknown = 500,
+}
+
+// This could also be a new unit-struct type, but it works as a type
+// alias as well, with less code duplication.  But we need both the
+// type alias and the value alias.
+//
+// This only looks confusing unless you realize that for unit-structs,
+// there is *always* a constant with the same name as the type.
+pub type StatusType = Tuple2<StatusConstType, String>;
+#[allow(non_upper_case_globals)]
+pub const StatusType: StatusType = Tuple2(StatusConstType, String);
+
+pub type Status = (StatusConst, StdString);
 
 
-// Descriptive Data hierarchy
-
-
-// pub type Str<'a> = Cow<'a, str>;
-
-// #[derive(Serialize)]
-// pub struct NodeDesc<'a> {
-//     modules: Vec<(Str<'a>, ModuleDesc<'a>)>,
-//     equipment_id: Str<'a>,
-//     firmware: Str<'a>,
-//     version: Str<'a>,
-// }
-
-// #[derive(Serialize)]
-// pub struct ModuleDesc<'a> {
-//     accessibles: Vec<(String, AccessibleDesc<'a>)>,
-//     properties: HashMap<Str<'a>, Str<'a>>,
-// }
-
-// #[derive(Serialize)]
-// pub struct AccessibleDesc<'a> {
-//     description: Str<'a>,
-//     datatype: TypeDesc,
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     readonly: Option<bool>,
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     unit: Option<Str<'a>>,
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     group: Option<Str<'a>>,
-// }
-
-// This is a mess :(
+// This is a bit of a mess :(
 //
 // In order to generate the param/cmd types as statics, we need not only
 // the value given by the user, e.g. `DoubleFrom(0.)`, but also its type
-// (since statics don't infer the type).
+// (since statics don't allow inferring the type).
 //
-// This provides a working but messy way of doing this, for now.
-#[macro_export]
+// This provides a working but very brittle way of doing this, for now.
 macro_rules! datatype_type {
-    (None) => (None);
-    (Bool) => (Bool);
-    (Double) => (Double);
-    (DoubleFrom($($_:tt)*)) => (DoubleFrom);
-    (DoubleFromTo($($_:tt)*)) => (DoubleFromTo);
-    (Integer) => (Integer);
-    (IntegerFrom($($_:tt)*)) => (IntegerFrom);
-    (IntegerFromTo($($_:tt)*)) => (IntegerFromTo);
-    (Blob($($_:tt)*)) => (Blob);
-    (String) => (String);
-    (StringUpto($($_:tt)*)) => (StringUpto);
+    (DoubleFrom($_:expr)) => (DoubleFrom);
+    (DoubleFromTo($_:expr, $__:expr)) => (DoubleFromTo);
+    (IntegerFrom($_:expr)) => (IntegerFrom);
+    (IntegerFromTo($_:expr)) => (IntegerFromTo);
+    (Blob($_:expr)) => (Blob);
+    (StringUpto($_:expr)) => (StringUpto);
     (Enum $($_:tt)*) => (Enum);
     (ArrayOf($($tp:tt)*)) => (ArrayOf<datatype_type!($($tp)*)>);
     (ArrayOfUpto($($tp:tt)*, $($_:tt)*)) => (ArrayOfUpto<datatype_type!($($tp)*)>);
     (Command($($tp1:tt)*, $($tp2:tt)*)) => (Command<datatype_type!($($tp1)*),
-                                                    datatype_type!($($tp2)*)>);
+                                            datatype_type!($($tp2)*)>);
+    // For "simple" (unit-struct) types, which includes user-derived types.
+    ($stalone_type:ty) => ($stalone_type);
 }
