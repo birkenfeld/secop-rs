@@ -146,7 +146,8 @@ fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream {
     // generate the final code!
 
     let generated = input.gen_impl(quote! {
-        use serde_json::Value;
+        use serde_json::{Value, json};
+        use lazy_static::lazy_static;
         use crate::errors::{Error, ErrorKind, Result};
         use crate::types::*;
 

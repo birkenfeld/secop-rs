@@ -23,10 +23,10 @@
 //! This module contains the definition of a protocol message, along with tools
 //! to parse and string-format it.
 
-// use std::borrow::Cow;
 use std::fmt;
 use regex::Regex;
-use serde_json::Value;
+use serde_json::{Value, json};
+use lazy_static::lazy_static;
 
 
 lazy_static! {

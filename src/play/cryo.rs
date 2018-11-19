@@ -26,11 +26,14 @@
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use log::*;
 use parking_lot::Mutex;
-// use serde_json::Value;
+use secop_derive::ModuleBase;
 
+// These will later be put into a "core" or "prelude" type export module.
+use crate::config::ModuleConfig;
 use crate::errors::Result;
-use crate::module::{Config, Module, ModInternals};
+use crate::module::{Module, ModInternals};
 use crate::util::localtime;
 
 #[derive(Default)]
@@ -57,7 +60,7 @@ struct CryoSimulator {
 }
 
 fn clamp(v: f64, min: f64, max: f64) -> f64 { v.min(max).max(min) }
-fn sleep(v: f64) { thread::sleep(Duration::from_float_secs(v)) }
+fn sleep_ms(v: u64) { thread::sleep(Duration::from_millis(v)) }
 
 /// Ported from the NICOS simulator, for comments see nicos/devices/generic/virtual.py
 impl CryoSimulator {
@@ -81,7 +84,7 @@ impl CryoSimulator {
             let h = t - last_t;
 
             if h < LOOPDELAY/damper {
-                sleep(clamp(LOOPDELAY/damper - h, 0.1, 60.));
+                sleep_ms(1000 * clamp(LOOPDELAY/damper - h, 0.1, 60.) as u64);
                 continue;
             }
 
@@ -240,7 +243,7 @@ pub struct Cryo {
 }
 
 impl Module for Cryo {
-    fn create(config: &Config, internals: ModInternals) -> Self {
+    fn create(config: ModuleConfig, internals: ModInternals) -> Self {
         let vars = StateVars { sample: 5.0, regulation: 3.0, control: true,
                                k_p: 50.0, k_i: 10.0, k_d: 0.0,
                                heater: 0.0, ramp: 0.0, ramping: false,

@@ -22,29 +22,16 @@
 //
 //! This module contains basic module functionality.
 
-// Basic params:
-//
-// Readable
-// - value
-// - pollinterval
-// - status
-// Writable
-// - target
-// Drivable
-// - stop()
-// Communicator
-// - communicate(in) -> out
-
 use std::time::Duration;
-// use std::error::Error as StdError;
-use serde_json::Value;
-use crossbeam_channel::{Sender, Receiver, tick};
+use log::*;
+use serde_json::{Value, json};
+use derive_new::new;
+use crossbeam_channel::{Sender, Receiver, tick, select};
 
+use crate::config::ModuleConfig;
 use crate::errors::Error;
 use crate::proto::Msg;
 use crate::server::HId;
-
-pub type Config = (); // TODO
 
 /// Data that every module requires.
 #[derive(new)]
@@ -56,7 +43,7 @@ pub struct ModInternals {
 
 /// Part of the Module trait to be implemented by user.
 pub trait Module : ModuleBase {
-    fn create(config: &Config, internals: ModInternals) -> Self where Self: Sized;
+    fn create(config: ModuleConfig, internals: ModInternals) -> Self where Self: Sized;
 }
 
 /// Part of the Module trait to be implemented by the derive macro.

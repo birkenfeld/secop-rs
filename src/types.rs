@@ -25,7 +25,7 @@
 
 use std::string::String as StdString;
 use fxhash::FxHashMap as HashMap;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Represents a defined SeCOP data type usable for parameters and command
 /// arguments/results.

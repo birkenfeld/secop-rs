@@ -20,34 +20,37 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! This module contains the server instance itself.
+//! This module contains the server instance itself, and associated objects to
+//! handle connections and message routing.
 
 use std::io::{self, prelude::*};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
 use std::thread;
+use log::*;
 use memchr::memchr;
+use derive_new::new;
 use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use crossbeam_channel::{unbounded, Sender, Receiver};
+use crossbeam_channel::{unbounded, Sender, Receiver, select};
+use serde_json::json;
 
-use crate::module::{Module, ModuleBase, ModInternals};
+use crate::config::ServerConfig;
+use crate::module::ModInternals;
 use crate::proto::{Msg, Msg::*, IDENT_REPLY};
 use crate::util::localtime;
+use crate::play;
 
 pub const RECVBUF_LEN: usize = 4096;
 
 /// Handler ID.  This is nonzero so that Option<HId> is the same size.
 pub type HId = NonZeroU64;
 
+#[derive(new)]
 pub struct Server {
-    modules: Vec<Box<dyn Module>>, // TODO unused right now
+    config: ServerConfig,
 }
 
 impl Server {
-    pub fn new(_config: &str) -> Result<Server, ()> {
-        Ok(Server { modules: vec![] })
-    }
-
     /// Listen for connections on the TCP socket and spawn handlers for it.
     fn tcp_listener(tcp_sock: TcpListener,
                     con_sender: Sender<(HId, Sender<String>)>,
@@ -72,7 +75,7 @@ impl Server {
 
     /// Main server function; start threads to accept clients on the listening
     /// socket, the dispatcher, and the individual modules.
-    pub fn start(self, addr: &str) -> io::Result<()> {
+    pub fn start(mut self, addr: &str) -> io::Result<()> {
         // create a few channels we need for the dispatcher:
         // sending info about incoming connections to the dispatcher
         let (con_sender, con_receiver) = unbounded();
@@ -84,13 +87,16 @@ impl Server {
         // create the modules
         let mut mod_senders = HashMap::default();
 
-        // TODO: create this from Config, not hardcoded...
-        let (mod_sender, mod_receiver) = unbounded();
-        let mod_rep_sender = rep_sender.clone();
-        let int = ModInternals::new("cryo".into(), mod_receiver, mod_rep_sender);
-        let mod1 = crate::play::cryo::Cryo::create(&(), int);
-        mod_senders.insert("cryo".into(), mod_sender);
-        thread::spawn(|| mod1.run());
+        for modcfg in self.config.modules.drain(..) {
+            let name = modcfg.name.clone();
+            // channel to send requests to the module
+            let (mod_sender, mod_receiver) = unbounded();
+            // replies go via a single one
+            let mod_rep_sender = rep_sender.clone();
+            let int = ModInternals::new(name.clone(), mod_receiver, mod_rep_sender);
+            mod_senders.insert(name, mod_sender);
+            play::run_module(modcfg, int).expect("TODO handle me");
+        }
 
         // create the dispatcher
         let dispatcher = Dispatcher {
@@ -112,8 +118,6 @@ impl Server {
 
 /// The dispatcher acts as a central piece connected to both modules and clients,
 /// all via channels.
-///
-/// It receives requests with an associated 
 struct Dispatcher {
     handlers: HashMap<HId, Sender<String>>,
     active: HashMap<String, HashSet<HId>>,
@@ -205,7 +209,7 @@ pub struct Handler {
     /// Assigned handler ID.
     hid: HId,
     /// Address of the remote peer socket.
-    addr: SocketAddr,
+    // addr: SocketAddr,
     /// Sender for incoming requests, to the dispatcher.
     req_sender: Sender<(HId, Msg)>,
     /// Sender for outgoing replies, to the sender thread.
@@ -221,7 +225,7 @@ impl Handler {
         let thread_name = addr.to_string();
         thread::spawn(move || Handler::sender(&thread_name, send_client, rep_receiver));
         mlzlog::set_thread_prefix(format!("[{}] ", addr));
-        Handler { hid, addr, client, req_sender, rep_sender }
+        Handler { hid, client, req_sender, rep_sender }
     }
 
     /// Thread that sends back replies and events to the client.

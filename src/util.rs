@@ -37,18 +37,18 @@ pub fn localtime() -> f64 {
 
 
 /// Float time to timespec.
-pub fn to_timespec(t: f64) -> time::Timespec {
-    let itime = (1e9 * t) as u64;
-    time::Timespec { nsec: (itime % 1_000_000_000) as i32,
-                     sec:  (itime / 1_000_000_000) as i64 }
-}
+// pub fn to_timespec(t: f64) -> time::Timespec {
+//     let itime = (1e9 * t) as u64;
+//     time::Timespec { nsec: (itime % 1_000_000_000) as i32,
+//                      sec:  (itime / 1_000_000_000) as i64 }
+// }
 
 
 /// Time to floating.
-pub fn to_timefloat(t: time::Tm) -> f64 {
-    let ts = t.to_timespec();
-    (ts.sec as f64) + ((ts.nsec as f64) / 1_000_000_000.)
-}
+// pub fn to_timefloat(t: time::Tm) -> f64 {
+//     let ts = t.to_timespec();
+//     (ts.sec as f64) + ((ts.nsec as f64) / 1_000_000_000.)
+// }
 
 
 /// mkdir -p utility.
