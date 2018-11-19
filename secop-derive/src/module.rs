@@ -40,7 +40,7 @@ struct SecopParam {
     #[darling(default)]
     unit: String,
     #[darling(default)]
-    group: Option<String>,
+    group: String,
 }
 
 /// Representation of the #[command(...)] attribute.
@@ -88,56 +88,61 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut descriptive = vec![];
 
     for p in params {
-        let SecopParam { name, doc, .. } = p;
+        let SecopParam { name, doc, readonly, datatype, unit, group, .. } = p;
         poll_params.push(name.to_string());
-        let par_type = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
-        let par_expr = syn::parse_str::<Expr>(&p.datatype).expect("unparseable datatype");
+        let type_static = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
+        let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
         let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
         let write_method = Ident::new(&format!("write_{}", name), Span::call_site());
         statics.push(quote! {
-            static ref #par_type : datatype_type!(#par_expr) = #par_expr;
+            static ref #type_static : datatype_type!(#type_expr) = #type_expr;
         });
         par_read_arms.push(quote! {
             #name => match self.#read_method() {
-                Ok(v)  => #par_type.from_repr(v),
+                Ok(v)  => #type_static.from_repr(v),
                 Err(v) => return Err(Error::new(ErrorKind::BadValue)) // TODO
             }
         });
         par_write_arms.push(if p.readonly {
             quote! {
-                #name => return Err(Error::new(ErrorKind::ReadOnly))
+                #name => return Err(Error::new(ErrorKind::ReadOnly)) // TODO
             }
         } else {
             quote! {
-                #name => match #par_type.to_repr(value.clone()) { // TODO remove clone
+                #name => match #type_static.to_repr(value.clone()) { // TODO remove clone
                     Ok(v)  => if let Err(e) = self.#write_method(v) { return Err(e) },
                     Err(v) => return Err(Error::new(ErrorKind::BadValue)) // TODO
                 }
             }
         });
+        let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
+        let group_entry = if !group.is_empty() { quote! { "group": #group, } } else { quote! {} };
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
-                "datatype": #par_expr.as_json(),
+                "datatype": #type_static.as_json(),
+                "readonly": #readonly,
+                #unit_entry
+                #group_entry
             }]),
         });
     }
 
     for c in commands {
         let SecopCommand { name, doc, .. } = c;
-        let arg_type = Ident::new(&format!("CMD_ARG_{}", name), Span::call_site());
-        let arg_expr = syn::parse_str::<Expr>(&c.argtype).expect("unparseable datatype");
-        let res_type = Ident::new(&format!("CMD_RES_{}", name), Span::call_site());
-        let res_expr = syn::parse_str::<Expr>(&c.restype).expect("unparseable datatype");
+        let argtype_static = Ident::new(&format!("CMD_ARG_{}", name), Span::call_site());
+        let argtype_expr = syn::parse_str::<Expr>(&c.argtype).expect("unparseable datatype");
+        let restype_static = Ident::new(&format!("CMD_RES_{}", name), Span::call_site());
+        let restype_expr = syn::parse_str::<Expr>(&c.restype).expect("unparseable datatype");
         let do_method = Ident::new(&format!("do_{}", name), Span::call_site());
         statics.push(quote! {
-            static ref #arg_type : datatype_type!(#arg_expr) = #arg_expr;
-            static ref #res_type : datatype_type!(#res_expr) = #res_expr;
+            static ref #argtype_static : datatype_type!(#argtype_expr) = #argtype_expr;
+            static ref #restype_static : datatype_type!(#restype_expr) = #restype_expr;
         });
         cmd_arms.push(quote! {
-            #name => match #arg_type.to_repr(arg) {
+            #name => match #argtype_static.to_repr(arg) {
                 Ok(v) => match self. #do_method (v) {
-                    Ok(res) => Ok(#res_type.from_repr(res)),
+                    Ok(res) => Ok(#restype_static.from_repr(res)),
                     Err(e)  => Err(Error::new(ErrorKind::CommandFailed)) // TODO
                 },
                 Err(v) => Err(Error::new(ErrorKind::BadValue)) // TODO
@@ -146,7 +151,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
-                "datatype": Command(#arg_expr, #res_expr).as_json(),
+                "datatype": Command(#argtype_expr, #restype_expr).as_json(),
             }]),
         });
     }
