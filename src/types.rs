@@ -45,6 +45,7 @@ pub trait TypeDesc {
     /// into the JSON representation for the protocol.
     fn from_repr(&self, val: Self::Repr) -> Value;
     /// Convert an external JSON value, incoming from a connection.
+    // TODO: this should probably take &Value
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value>;
 }
 
@@ -93,6 +94,7 @@ impl TypeDesc for DoubleFrom {
     fn as_json(&self) -> Value { json!(["double", self.0]) }
     fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        // TODO: check limits
         val.as_f64().ok_or(val)
     }
 }
@@ -105,6 +107,7 @@ impl TypeDesc for DoubleFromTo {
     fn as_json(&self) -> Value { json!(["double", self.0, self.1]) }
     fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        // TODO: check limits
         val.as_f64().ok_or(val)
     }
 }
@@ -129,6 +132,7 @@ impl TypeDesc for IntegerFrom {
     fn as_json(&self) -> Value { json!(["int", self.0]) }
     fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        // TODO: check limits
         val.as_i64().ok_or(val)
     }
 }
@@ -141,6 +145,7 @@ impl TypeDesc for IntegerFromTo {
     fn as_json(&self) -> Value { json!(["int", self.0, self.1]) }
     fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        // TODO: check limits
         val.as_i64().ok_or(val)
     }
 }
@@ -151,8 +156,13 @@ pub struct Blob(pub usize, pub usize);
 impl TypeDesc for Blob {
     type Repr = Vec<u8>;
     fn as_json(&self) -> Value { json!(["blob", self.0, self.1]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { unimplemented!() }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> { unimplemented!() }
+    fn from_repr(&self, val: Self::Repr) -> Value {
+        json!(base64::encode(&val))
+    }
+    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        // TODO: check length limits
+        val.as_str().and_then(|s| base64::decode(s).ok()).ok_or(val)
+    }
 }
 
 
@@ -175,6 +185,7 @@ impl TypeDesc for StringUpto {
     fn as_json(&self) -> Value { json!(["string", 0, self.0]) }
     fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        // TODO: check length limits
         val.as_str().map(Into::into).ok_or(val)
     }
 }
@@ -212,8 +223,16 @@ impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
     fn as_json(&self) -> Value {
         json!(["array", self.0.as_json()])
     }
-    fn from_repr(&self, val: Self::Repr) -> Value { unimplemented!() }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> { unimplemented!() }
+    fn from_repr(&self, val: Self::Repr) -> Value {
+        Value::Array(val.into_iter().map(|v| self.0.from_repr(v)).collect())
+    }
+    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        if let Value::Array(arr) = val {
+            arr.into_iter().map(|v| self.0.to_repr(v)).collect()
+        } else {
+            Err(val)
+        }
+    }
 }
 
 
@@ -224,8 +243,17 @@ impl<T: TypeDesc> TypeDesc for ArrayOfUpto<T> {
     fn as_json(&self) -> Value {
         json!(["array", self.0.as_json(), 0, self.1])
     }
-    fn from_repr(&self, val: Self::Repr) -> Value { unimplemented!() }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> { unimplemented!() }
+    fn from_repr(&self, val: Self::Repr) -> Value {
+        Value::Array(val.into_iter().map(|v| self.0.from_repr(v)).collect())
+    }
+    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+        // TODO: check length limits
+        if let Value::Array(arr) = val {
+            arr.into_iter().map(|v| self.0.to_repr(v)).collect()
+        } else {
+            Err(val)
+        }
+    }
 }
 
 
