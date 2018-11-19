@@ -150,7 +150,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
-                "datatype": Command(#argtype_expr, #restype_expr).as_json(),
+                "datatype": ["command", #argtype_static.as_json(), #restype_static.as_json()],
             }]),
         });
     }

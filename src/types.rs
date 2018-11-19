@@ -222,18 +222,8 @@ pub struct ArrayOfUpto<T: TypeDesc>(pub T, pub usize);
 impl<T: TypeDesc> TypeDesc for ArrayOfUpto<T> {
     type Repr = Vec<T::Repr>;
     fn as_json(&self) -> Value {
-        json!(["array", self.0.as_json(), self.1])
+        json!(["array", self.0.as_json(), 0, self.1])
     }
-    fn from_repr(&self, val: Self::Repr) -> Value { unimplemented!() }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> { unimplemented!() }
-}
-
-
-pub struct Command<A: TypeDesc, R: TypeDesc>(pub A, pub R);
-
-impl<A: TypeDesc, R: TypeDesc> TypeDesc for Command<A, R> {
-    type Repr = (A::Repr, R::Repr);
-    fn as_json(&self) -> Value { json!(["command", self.0.as_json(), self.1.as_json()]) }
     fn from_repr(&self, val: Self::Repr) -> Value { unimplemented!() }
     fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> { unimplemented!() }
 }
@@ -274,6 +264,9 @@ impl_tuple!(Tuple3 => T1, T2, T3 : 3 : 0, 1, 2);
 impl_tuple!(Tuple4 => T1, T2, T3, T4 : 4 : 0, 1, 2, 3);
 impl_tuple!(Tuple5 => T1, T2, T3, T4, T5 : 5 : 0, 1, 2, 3, 4);
 impl_tuple!(Tuple6 => T1, T2, T3, T4, T5, T6 : 6 : 0, 1, 2, 3, 4, 5);
+
+// Note: There is no type for Command, since it's only a pseudo-type that
+// is not actually validated/converted to.
 
 
 // Helpers for easy Enum creation
@@ -337,8 +330,6 @@ macro_rules! datatype_type {
     (Enum $($_:tt)*) => (Enum);
     (ArrayOf($($tp:tt)*)) => (ArrayOf<datatype_type!($($tp)*)>);
     (ArrayOfUpto($($tp:tt)*, $($_:tt)*)) => (ArrayOfUpto<datatype_type!($($tp)*)>);
-    (Command($($tp1:tt)*, $($tp2:tt)*)) => (Command<datatype_type!($($tp1)*),
-                                            datatype_type!($($tp2)*)>);
     // For "simple" (unit-struct) types, which includes user-derived types.
     ($stalone_type:ty) => ($stalone_type);
 }
