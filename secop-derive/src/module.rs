@@ -88,7 +88,6 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
     for p in params {
         let SecopParam { name, doc, readonly, datatype, unit, group, .. } = p;
-        poll_params.push(name.to_string());
         let type_static = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
         let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
         let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
@@ -98,8 +97,9 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         });
         par_read_arms.push(quote! {
             #name => match self.#read_method() {
-                Ok(v)  => #type_static.from_repr(v),
-                Err(v) => return Err(Error::new(ErrorKind::BadValue)) // TODO
+                Ok(v)  => #type_static.to_json(v)
+                                      .map_err(|e| Error::new(ErrorKind::BadValue))?,
+                Err(v) => return Err(Error::new(ErrorKind::CommandFailed)) // TODO
             }
         });
         par_write_arms.push(if p.readonly {
@@ -108,18 +108,19 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         } else {
             quote! {
-                #name => match #type_static.to_repr(value.clone()) { // TODO remove clone
+                #name => match #type_static.from_json(&value) {
                     Ok(v)  => if let Err(e) = self.#write_method(v) { return Err(e) },
                     Err(v) => return Err(Error::new(ErrorKind::BadValue)) // TODO
                 }
             }
         });
+        poll_params.push(name.to_string());
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
         let group_entry = if !group.is_empty() { quote! { "group": #group, } } else { quote! {} };
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
-                "datatype": #type_static.as_json(),
+                "datatype": #type_static.type_json(),
                 "readonly": #readonly,
                 #unit_entry
                 #group_entry
@@ -139,18 +140,19 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             static ref #restype_static : datatype_type!(#restype_expr) = #restype_expr;
         });
         cmd_arms.push(quote! {
-            #name => match #argtype_static.to_repr(arg) {
-                Ok(v) => match self. #do_method (v) {
-                    Ok(res) => Ok(#restype_static.from_repr(res)),
+            #name => match #argtype_static.from_json(&arg) {
+                Ok(v) => match self.#do_method(v) {
+                    Ok(res) => #restype_static.to_json(res)
+                                              .map_err(|e| Error::new(ErrorKind::BadValue)),
                     Err(e)  => Err(Error::new(ErrorKind::CommandFailed)) // TODO
                 },
-                Err(v) => Err(Error::new(ErrorKind::BadValue)) // TODO
+                Err(e) => Err(Error::new(ErrorKind::BadValue)) // TODO
             }
         });
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
-                "datatype": ["command", #argtype_static.as_json(), #restype_static.as_json()],
+                "datatype": ["command", #argtype_static.type_json(), #restype_static.type_json()],
             }]),
         });
     }

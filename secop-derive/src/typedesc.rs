@@ -44,9 +44,10 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
 
     let mut statics = Vec::new();
     let mut members = Vec::new();
-    let mut member_from_repr = Vec::new();
+    let mut member_names = Vec::new();
+    let mut member_to_json = Vec::new();
     let mut member_contains = Vec::new();
-    let mut member_to_repr = Vec::new();
+    let mut member_from_json = Vec::new();
     let mut descr_members = Vec::new();
 
     for binding in input.variants()[0].bindings() {
@@ -71,12 +72,11 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
             static ref #dtype_static : datatype_type!(#dtype_expr) = #dtype_expr;
         });
         members.push(quote! { #ident, });
-        member_from_repr.push(quote! { #ident_str: #dtype_static.from_repr(#ident), });
+        member_to_json.push(quote! { #ident_str: #dtype_static.to_json(#ident)?, });
         member_contains.push(quote! { !obj.contains_key(#ident_str) });
-        member_to_repr.push(quote! {
-            #ident: #dtype_static.to_repr(obj.remove(#ident_str).unwrap())?,
-        });
-        descr_members.push(quote! { #ident_str: #dtype_static.as_json(), });
+        member_from_json.push(quote! { #ident: #dtype_static.from_json(&obj[#ident_str])?, });
+        descr_members.push(quote! { #ident_str: #dtype_static.type_json(), });
+        member_names.push(ident_str);
     }
 
     let generated = quote! {
@@ -93,23 +93,25 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
 
             impl crate::types::TypeDesc for #struct_name {
                 type Repr = #name;
-                fn as_json(&self) -> Value {
+                fn type_json(&self) -> Value {
                     json!(["struct", { #( #descr_members )* }])
                 }
-                fn from_repr(&self, val: Self::Repr) -> Value {
+                fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, &'static str> {
                     let #name { #( #members )* } = val;
-                    json!({ #( #member_from_repr )* })
+                    Ok(json!({ #( #member_to_json )* }))
                 }
-                fn to_repr(&self, val: Value) -> std::result::Result<Self::Repr, Value> {
-                    if let Value::Object(mut obj) = val {
-                        if #( #member_contains )||* {
-                            return Err(Value::Object(obj));
-                        }
+                fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, &'static str> {
+                    if let Some(obj) = val.as_object() {
+                        #(
+                            if #member_contains {
+                                return Err(concat!("missing ", #member_names, " in object"));
+                            }
+                        )*
                         Ok(#name {
-                            #( #member_to_repr )*
+                            #( #member_from_json )*
                         })
                     } else {
-                        Err(val)
+                        Err("expected object")
                     }
                 }
             }
@@ -156,25 +158,25 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
 
             impl crate::types::TypeDesc for #struct_name {
                 type Repr = #name;
-                fn as_json(&self) -> Value {
+                fn type_json(&self) -> Value {
                     json!(["enum", { #( #descr_members )* }])
                 }
-                fn from_repr(&self, val: Self::Repr) -> Value {
-                    json!(val as i64)
+                fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, &'static str> {
+                    Ok(json!(val as i64))
                 }
-                fn to_repr(&self, val: Value) -> std::result::Result<Self::Repr, Value> {
+                fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, &'static str> {
                     if let Some(s) = val.as_str() {
                         match s {
                             #( #str_arms )*
-                            _ => Err(val)
+                            _ => Err("string not an enum member")
                         }
                     } else if let Some(i) = val.as_i64() {
                         match i {
                             #( #int_arms )*
-                            _ => Err(val)
+                            _ => Err("integer not an enum member")
                         }
                     } else {
-                        Err(val)
+                        Err("expected string or integer")
                     }
                 }
             }

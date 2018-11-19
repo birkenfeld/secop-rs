@@ -33,20 +33,19 @@ use secop_derive::TypeDesc;
 ///
 /// The Repr associated type should be set to a Rust type that can hold all
 /// possible values, and conversion between JSON and that type is implemented
-/// using `from_repr` and `to_repr`.
+/// using `to_json` and `from_json`.
 ///
 /// On conversion error, the incoming JSON Value is simply returned, and the
 /// caller is responsible for raising the correct SECoP error.
 pub trait TypeDesc {
     type Repr;
     /// Return a JSON-serialized description of the data type.
-    fn as_json(&self) -> Value;
+    fn type_json(&self) -> Value;
     /// Convert an internal value, as determined by the module code,
     /// into the JSON representation for the protocol.
-    fn from_repr(&self, val: Self::Repr) -> Value;
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str>;
     /// Convert an external JSON value, incoming from a connection.
-    // TODO: this should probably take &Value
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value>;
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str>;
 }
 
 
@@ -55,10 +54,12 @@ pub struct None;
 
 impl TypeDesc for None {
     type Repr = ();
-    fn as_json(&self) -> Value { json!(null) }
-    fn from_repr(&self, _: Self::Repr) -> Value { Value::Null }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
-        if val.is_null() { Ok(()) } else { Err(val) }
+    fn type_json(&self) -> Value { json!(null) }
+    fn to_json(&self, _: Self::Repr) -> Result<Value, &'static str> {
+        Ok(Value::Null)
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
+        if val.is_null() { Ok(()) } else { Err("expected null") }
     }
 }
 
@@ -67,10 +68,12 @@ pub struct Bool;
 
 impl TypeDesc for Bool {
     type Repr = bool;
-    fn as_json(&self) -> Value { json!(["bool"]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
-        val.as_bool().ok_or(val)
+    fn type_json(&self) -> Value { json!(["bool"]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(Value::Bool(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
+        val.as_bool().ok_or("expected boolean")
     }
 }
 
@@ -79,10 +82,12 @@ pub struct Double;
 
 impl TypeDesc for Double {
     type Repr = f64;
-    fn as_json(&self) -> Value { json!(["double"]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
-        val.as_f64().ok_or(val)
+    fn type_json(&self) -> Value { json!(["double"]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(json!(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
+        val.as_f64().ok_or("expected double")
     }
 }
 
@@ -91,11 +96,13 @@ pub struct DoubleFrom(pub f64);
 
 impl TypeDesc for DoubleFrom {
     type Repr = f64;
-    fn as_json(&self) -> Value { json!(["double", self.0]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn type_json(&self) -> Value { json!(["double", self.0]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(json!(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         // TODO: check limits
-        val.as_f64().ok_or(val)
+        val.as_f64().ok_or("expected double")
     }
 }
 
@@ -104,11 +111,13 @@ pub struct DoubleFromTo(pub f64, pub f64);
 
 impl TypeDesc for DoubleFromTo {
     type Repr = f64;
-    fn as_json(&self) -> Value { json!(["double", self.0, self.1]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn type_json(&self) -> Value { json!(["double", self.0, self.1]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(json!(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         // TODO: check limits
-        val.as_f64().ok_or(val)
+        val.as_f64().ok_or("expected double")
     }
 }
 
@@ -117,10 +126,12 @@ pub struct Integer;
 
 impl TypeDesc for Integer {
     type Repr = i64;
-    fn as_json(&self) -> Value { json!(["int"]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
-        val.as_i64().ok_or(val)
+    fn type_json(&self) -> Value { json!(["int"]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(json!(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
+        val.as_i64().ok_or("expected integer")
     }
 }
 
@@ -129,11 +140,13 @@ pub struct IntegerFrom(pub i64);
 
 impl TypeDesc for IntegerFrom {
     type Repr = i64;
-    fn as_json(&self) -> Value { json!(["int", self.0]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn type_json(&self) -> Value { json!(["int", self.0]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(json!(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         // TODO: check limits
-        val.as_i64().ok_or(val)
+        val.as_i64().ok_or("expected integer")
     }
 }
 
@@ -142,11 +155,13 @@ pub struct IntegerFromTo(pub i64, pub i64);
 
 impl TypeDesc for IntegerFromTo {
     type Repr = i64;
-    fn as_json(&self) -> Value { json!(["int", self.0, self.1]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn type_json(&self) -> Value { json!(["int", self.0, self.1]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(json!(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         // TODO: check limits
-        val.as_i64().ok_or(val)
+        val.as_i64().ok_or("expected integer")
     }
 }
 
@@ -155,13 +170,14 @@ pub struct Blob(pub usize, pub usize);
 
 impl TypeDesc for Blob {
     type Repr = Vec<u8>;
-    fn as_json(&self) -> Value { json!(["blob", self.0, self.1]) }
-    fn from_repr(&self, val: Self::Repr) -> Value {
-        json!(base64::encode(&val))
+    fn type_json(&self) -> Value { json!(["blob", self.0, self.1]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(Value::String(base64::encode(&val)))
     }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         // TODO: check length limits
-        val.as_str().and_then(|s| base64::decode(s).ok()).ok_or(val)
+        val.as_str().and_then(|s| base64::decode(s).ok())
+                    .ok_or("expected base64 coded string")
     }
 }
 
@@ -170,10 +186,12 @@ pub struct String;
 
 impl TypeDesc for String {
     type Repr = StdString;
-    fn as_json(&self) -> Value { json!(["string"]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
-        val.as_str().map(Into::into).ok_or(val)
+    fn type_json(&self) -> Value { json!(["string"]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(Value::String(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
+        val.as_str().map(Into::into).ok_or("expected string")
     }
 }
 
@@ -182,11 +200,13 @@ pub struct StringUpto(pub usize);
 
 impl TypeDesc for StringUpto {
     type Repr = StdString;
-    fn as_json(&self) -> Value { json!(["string", 0, self.0]) }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn type_json(&self) -> Value { json!(["string", 0, self.0]) }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(Value::String(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         // TODO: check length limits
-        val.as_str().map(Into::into).ok_or(val)
+        val.as_str().map(Into::into).ok_or("expected string")
     }
 }
 
@@ -199,18 +219,20 @@ pub struct Enum(pub HashMap<StdString, i64>);
 
 impl TypeDesc for Enum {
     type Repr = i64;
-    fn as_json(&self) -> Value {
+    fn type_json(&self) -> Value {
         json!(["enum", self.0])
     }
-    fn from_repr(&self, val: Self::Repr) -> Value { json!(val) }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        Ok(json!(val))
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         if let Some(s) = val.as_str() {
-            self.0.get(s).cloned().ok_or(val)
+            self.0.get(s).cloned().ok_or("string not an enum member")
         } else if let Some(i) = val.as_i64() {
             if self.0.values().any(|&j| i == j) { Ok(i) }
-            else { Err(val) }
+            else { Err("integer not an enum member") }
         } else {
-            Err(val)
+            Err("expected string or integer")
         }
     }
 }
@@ -220,17 +242,18 @@ pub struct ArrayOf<T: TypeDesc>(pub T);
 
 impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
     type Repr = Vec<T::Repr>;
-    fn as_json(&self) -> Value {
-        json!(["array", self.0.as_json()])
+    fn type_json(&self) -> Value {
+        json!(["array", self.0.type_json()])
     }
-    fn from_repr(&self, val: Self::Repr) -> Value {
-        Value::Array(val.into_iter().map(|v| self.0.from_repr(v)).collect())
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        let v: Result<Vec<_>, _> = val.into_iter().map(|v| self.0.to_json(v)).collect();
+        Ok(Value::Array(v?))
     }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
-        if let Value::Array(arr) = val {
-            arr.into_iter().map(|v| self.0.to_repr(v)).collect()
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
+        if let Some(arr) = val.as_array() {
+            arr.iter().map(|v| self.0.from_json(v)).collect()
         } else {
-            Err(val)
+            Err("expected array")
         }
     }
 }
@@ -240,18 +263,19 @@ pub struct ArrayOfUpto<T: TypeDesc>(pub T, pub usize);
 
 impl<T: TypeDesc> TypeDesc for ArrayOfUpto<T> {
     type Repr = Vec<T::Repr>;
-    fn as_json(&self) -> Value {
-        json!(["array", self.0.as_json(), 0, self.1])
+    fn type_json(&self) -> Value {
+        json!(["array", self.0.type_json(), 0, self.1])
     }
-    fn from_repr(&self, val: Self::Repr) -> Value {
-        Value::Array(val.into_iter().map(|v| self.0.from_repr(v)).collect())
+    fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+        let v: Result<Vec<_>, _> = val.into_iter().map(|v| self.0.to_json(v)).collect();
+        Ok(Value::Array(v?))
     }
-    fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
         // TODO: check length limits
-        if let Value::Array(arr) = val {
-            arr.into_iter().map(|v| self.0.to_repr(v)).collect()
+        if let Some(arr) = val.as_array() {
+            arr.iter().map(|v| self.0.from_json(v)).collect()
         } else {
-            Err(val)
+            Err("expected array")
         }
     }
 }
@@ -263,25 +287,21 @@ macro_rules! impl_tuple {
 
         impl<$($tv: TypeDesc),*> TypeDesc for $name<$($tv),*> {
             type Repr = ($($tv::Repr),*);
-            fn as_json(&self) -> Value {
-                json!(["tuple", $(self.$idx.as_json()),*])
+            fn type_json(&self) -> Value {
+                json!(["tuple", $(self.$idx.type_json()),*])
             }
-            fn from_repr(&self, val: Self::Repr) -> Value {
-                json!([ $(self.$idx.from_repr(val.$idx)),* ])
+            fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
+                Ok(json!([ $(self.$idx.to_json(val.$idx)),* ]))
             }
-            fn to_repr(&self, val: Value) -> Result<Self::Repr, Value> {
-                if let Value::Array(arr) = val {
+            fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
+                if let Some(arr) = val.as_array() {
                     if arr.len() == $len {
-                        let mut iter = arr.into_iter();
                         return Ok((
-                            $(self.$idx.to_repr(iter.next().expect("len is checked"))?),*
+                            $(self.$idx.from_json(&arr[$idx])?),*
                         ));
-                    } else {
-                        Err(Value::Array(arr))
                     }
-                } else {
-                    Err(val)
                 }
+                Err(concat!("expected array with ", stringify!($len), " elements"))
             }
         }
     }
