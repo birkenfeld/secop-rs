@@ -118,6 +118,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
+                "datatype": #par_expr.as_json(),
             }]),
         });
     }
@@ -145,6 +146,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
+                "datatype": Command(#arg_expr, #res_expr).as_json(),
             }]),
         });
     }
