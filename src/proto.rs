@@ -45,7 +45,7 @@ lazy_static! {
 
 type Str = String;
 
-pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2\n";
+pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2";
 
 /// An algebraic data type that represents any message that can be sent
 /// over the network in the protocol.

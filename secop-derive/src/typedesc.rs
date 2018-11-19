@@ -20,14 +20,14 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! Derive support for secop modules.
+//! Derive TypeDesc for structs to be used as SeCOP Struct types.
 
-#![recursion_limit="128"]
+use quote::quote;
 
-mod module;
-mod typedesc;
+pub fn derive_typedesc(input: synstructure::Structure) -> proc_macro2::TokenStream {
 
-use synstructure::decl_derive;
-
-decl_derive!([ModuleBase, attributes(param, command)] => crate::module::derive_module);
-decl_derive!([TypeDesc, attributes(datatype)] => crate::typedesc::derive_typedesc);
+    let generated = input.gen_impl(quote! {
+    });
+    // println!("{}", generated);
+    generated
+}
