@@ -227,7 +227,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 Ok(json!([value, {"t": localtime()}]))
             }
 
-            fn trigger(&mut self, param: &str) -> Result<Value> {
+            fn read(&mut self, param: &str) -> Result<Value> {
                 let value = match param {
                     #( #par_read_arms, )*
                     _ => return Err(Error::new(ErrorKind::NoSuchParameter, ""))

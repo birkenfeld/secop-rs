@@ -75,7 +75,7 @@ pub enum Msg {
     Change { module: String, param: String, value: Value },
     /// change result
     Changed { module: String, param: String, value: Value },
-    /// trigger/poll request
+    /// read request
     Read { module: String, param: String },
     /// heartbeat request
     Ping { token: String },

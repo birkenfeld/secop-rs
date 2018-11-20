@@ -191,7 +191,6 @@ impl Dispatcher {
                             });
                         }
                         Quit => {
-                            info!("removing handler {}", hid);
                             self.handlers.remove(&hid);
                             for set in self.active.values_mut() {
                                 set.remove(&hid);

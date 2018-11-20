@@ -59,7 +59,7 @@ pub trait ModuleBase {
 
     fn change(&mut self, param: &str, value: Value) -> Result<Value, Error>;
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
-    fn trigger(&mut self, param: &str) -> Result<Value, Error>;
+    fn read(&mut self, param: &str) -> Result<Value, Error>;
     fn describe(&self) -> Value;
 
     fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams);
@@ -99,7 +99,7 @@ pub trait ModuleBase {
                             Ok(result) => Msg::Done { module, command, result },
                             Err(e) => e.into_msg(req.0),
                         },
-                        Msg::Read { module, param } => match self.trigger(&param) {
+                        Msg::Read { module, param } => match self.read(&param) {
                             Ok(value) => Msg::Update { module, param, value },
                             Err(e) => e.into_msg(req.0),
                         },
