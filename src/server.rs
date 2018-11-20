@@ -36,7 +36,7 @@ use serde_json::{Value, json};
 
 use crate::config::ServerConfig;
 use crate::module::ModInternals;
-use crate::proto::{Msg, Msg::*, IDENT_REPLY};
+use crate::proto::{IncomingMsg, Msg, Msg::*, IDENT_REPLY};
 use crate::util::localtime;
 use crate::play;
 
@@ -55,7 +55,7 @@ impl Server {
     /// Listen for connections on the TCP socket and spawn handlers for it.
     fn tcp_listener(tcp_sock: TcpListener,
                     con_sender: Sender<(HId, Sender<String>)>,
-                    req_sender: Sender<(HId, Msg)>)
+                    req_sender: Sender<(HId, IncomingMsg)>)
     {
         mlzlog::set_thread_prefix("TCP: ".into());
         info!("listener started");
@@ -132,9 +132,9 @@ struct Dispatcher {
     descriptive: Value,
     handlers: HashMap<HId, Sender<String>>,
     active: HashMap<String, HashSet<HId>>,
-    modules: HashMap<String, Sender<(HId, Msg)>>,
+    modules: HashMap<String, Sender<(HId, IncomingMsg)>>,
     connections: Receiver<(HId, Sender<String>)>,
-    requests: Receiver<(HId, Msg)>,
+    requests: Receiver<(HId, IncomingMsg)>,
     replies: Receiver<(Option<HId>, Msg)>,
 }
 
@@ -149,7 +149,7 @@ impl Dispatcher {
                 },
                 recv(self.requests) -> res => if let Ok((hid, req)) = res {
                     debug!("got request {} -> {}", hid, req);
-                    match req {
+                    match req.1 {
                         CommandReq { ref module, .. } |
                         ChangeReq  { ref module, .. } |
                         TriggerReq { ref module, .. } => {
@@ -160,6 +160,7 @@ impl Dispatcher {
                         EventEnableReq { module } => {
                             // TODO: send out an update message for all params
                             if !module.is_empty() {
+                                // TODO: check for module existing
                                 self.active.entry(module.clone()).or_default().insert(hid);
                             } else {
                                 for module in self.modules.keys() {
@@ -225,14 +226,14 @@ pub struct Handler {
     /// Address of the remote peer socket.
     // addr: SocketAddr,
     /// Sender for incoming requests, to the dispatcher.
-    req_sender: Sender<(HId, Msg)>,
+    req_sender: Sender<(HId, IncomingMsg)>,
     /// Sender for outgoing replies, to the sender thread.
     rep_sender: Sender<String>,
 }
 
 impl Handler {
     pub fn new(hid: HId, client: TcpStream, addr: SocketAddr,
-               req_sender: Sender<(HId, Msg)>,
+               req_sender: Sender<(HId, IncomingMsg)>,
                rep_sender: Sender<String>, rep_receiver: Receiver<String>) -> Handler {
         // spawn a thread that handles sending replies and events back
         let send_client = client.try_clone().expect("could not clone socket");
@@ -260,8 +261,8 @@ impl Handler {
     }
 
     /// Handle an incoming correctly-parsed message.
-    fn handle_msg(&self, msg: Msg) {
-        match msg {
+    fn handle_msg(&self, msg: IncomingMsg) {
+        match msg.1 {
             // most messages must go through the dispatcher to a module
             ChangeReq { .. } | CommandReq { .. } | TriggerReq { .. } | DescribeReq |
             EventEnableReq { .. } | EventDisableReq { .. } => {
@@ -276,21 +277,21 @@ impl Handler {
                 self.send_back(IdentRep { encoded: IDENT_REPLY.into() });
             }
             _ => {
-                warn!("message {:?} not handled yet", msg);
+                warn!("message {:?} not handled yet", msg.1);
             }
         }
     }
 
     /// Process a single line (message).
-    fn process(&self, line: &str) {
+    fn process(&self, line: String) {
         match Msg::parse(line) {
             Ok(msg) => {
-                debug!("processing {:?} => {:?}", line, msg);
+                debug!("processing {}", msg);
                 self.handle_msg(msg);
             }
             Err(msg) => {
                 // error while parsing: msg will be an ErrorRep
-                warn!("failed to parse line: {:?} - {}", line, msg);
+                warn!("failed to parse line: {}", msg);
                 self.send_back(msg);
             }
         }
@@ -316,10 +317,9 @@ impl Handler {
             // process all whole lines we got
             let mut from = 0;
             while let Some(to) = memchr(b'\n', &buf[from..]) {
-                // note, this won't allocate a new String if valid UTF-8
                 let line_str = String::from_utf8_lossy(&buf[from..from+to]);
                 let line_str = line_str.trim_right_matches('\r');
-                self.process(line_str);
+                self.process(line_str.to_owned());
                 from += to + 1;
             }
             buf.drain(..from);
@@ -329,7 +329,7 @@ impl Handler {
                 break;
             }
         }
-        self.req_sender.send((self.hid, Quit)).unwrap();
+        self.req_sender.send((self.hid, IncomingMsg("".into(), Quit))).unwrap();
         info!("handler is finished");
     }
 }

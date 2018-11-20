@@ -25,8 +25,10 @@
 
 use std::fmt;
 use regex::Regex;
-use serde_json::{Value, json};
+use serde_json::Value;
 use lazy_static::lazy_static;
+
+use crate::errors::{Error, ErrorKind};
 
 
 lazy_static! {
@@ -43,53 +45,51 @@ lazy_static! {
     "#).unwrap();
 }
 
-type Str = String;
-
 pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2";
 
 /// An algebraic data type that represents any message that can be sent
 /// over the network in the protocol.
-///
-/// String entries here can be borrowed from a network buffer, or owned.
 #[derive(Debug, Clone)]
 pub enum Msg {
     /// identify request
     IdentReq,
     /// identify reply
-    IdentRep { encoded: Str },
+    IdentRep { encoded: String },
     /// description request
     DescribeReq,
     /// description reply
-    DescribeRep { id: Str, desc: Value },
+    DescribeRep { id: String, desc: Value },
     /// event enable request
-    EventEnableReq { module: Str },
+    EventEnableReq { module: String },
     /// event enable reply
-    EventEnableRep { module: Str },
+    EventEnableRep { module: String },
     /// event disable request
-    EventDisableReq { module: Str },
+    EventDisableReq { module: String },
     /// event disable reply
-    EventDisableRep { module: Str },
+    EventDisableRep { module: String },
     /// command execution request
-    CommandReq { module: Str, command: Str, arg: Value },
+    CommandReq { module: String, command: String, arg: Value },
     /// command result
-    CommandRep { module: Str, command: Str, result: Value },
+    CommandRep { module: String, command: String, result: Value },
     /// change request
-    ChangeReq { module: Str, param: Str, value: Value },
+    ChangeReq { module: String, param: String, value: Value },
     /// change result
-    ChangeRep { module: Str, param: Str, value: Value },
+    ChangeRep { module: String, param: String, value: Value },
     /// trigger/poll request
-    TriggerReq { module: Str, param: Str },
+    TriggerReq { module: String, param: String },
     /// heartbeat request
-    PingReq { token: Str },
+    PingReq { token: String },
     /// heartbeat reply
-    PingRep { token: Str, data: Value },
+    PingRep { token: String, data: Value },
     /// error reply
-    ErrorRep { class: Str, report: Value },
+    ErrorRep { class: String, report: Value },
     /// update event
-    Update { module: Str, param: Str, value: Value },
+    Update { module: String, param: String, value: Value },
     /// not a protocol message, indicates the connection is done
     Quit,
 }
+
+pub struct IncomingMsg(pub String, pub Msg);
 
 use self::Msg::*;
 
@@ -116,8 +116,8 @@ impl Msg {
     /// Parse a string slice containing a message.
     ///
     /// This matches a regular expression, and then creates a `Msg` if successful.
-    pub fn parse(msg: &str) -> Result<Msg, Msg> {
-        if let Some(captures) = MSG_RE.captures(msg) {
+    pub fn parse(msg: String) -> Result<IncomingMsg, Msg> {
+        if let Some(captures) = MSG_RE.captures(&msg) {
             let msgtype = captures.get(1).unwrap().as_str();
             let mut split = captures.get(2).map(|m| m.as_str())
                                            .unwrap_or("").splitn(2, ':').map(Into::into);
@@ -126,37 +126,34 @@ impl Msg {
             let data = if let Some(jsonstr) = captures.get(3) {
                 match serde_json::from_str(jsonstr.as_str()) {
                     Ok(v) => v,
-                    Err(_) => return Err(ErrorRep { class: "BadValue".into(), // TODO dupe
-                                                    report: json!([msg, "invalid json", {}]) })
+                    Err(_) => return Err(Error::new(ErrorKind::Protocol, "invalid JSON").into_msg(msg))
                 }
             } else { Value::Null };
-            match msgtype {
-                wire::IDN =>        Ok(IdentReq),
-                wire::DESCRIBE =>   Ok(DescribeReq),
-                wire::DESCRIBING => Ok(DescribeRep { id: spec1, desc: data }),
-                wire::ACTIVATE =>   Ok(EventEnableReq { module: spec1 }),
-                wire::ACTIVE =>     Ok(EventEnableRep { module: spec1 }),
-                wire::DEACTIVATE => Ok(EventDisableReq { module: spec1 }),
-                wire::INACTIVE =>   Ok(EventDisableRep { module: spec1 }),
-                wire::PING =>       Ok(PingReq { token: spec1 }),
-                wire::PONG =>       Ok(PingRep { token: spec1, data: data }),
-                wire::ERROR =>      Ok(ErrorRep { class: spec1, report: data }),
-                wire::DO =>         Ok(CommandReq { module: spec1, command: spec2.expect("XXX"), arg: data }),
-                wire::DONE =>       Ok(CommandRep { module: spec1, command: spec2.expect("XXX"), result: data }),
-                wire::CHANGE =>     Ok(ChangeReq { module: spec1, param: spec2.expect("XXX"), value: data }),
-                wire::CHANGED =>    Ok(ChangeRep { module: spec1, param: spec2.expect("XXX"), value: data }),
-                wire::READ =>       Ok(TriggerReq { module: spec1, param: spec2.expect("XXX") }),
-                wire::UPDATE =>     Ok(Update { module: spec1, param: spec2.expect("XXX"), value: data }),
-                _ => Err(ErrorRep { class: "ProtocolError".into(), // TODO dupe
-                                    report: json!([msg, "no such message type", {}]) })
-            }
+            let parsed = match msgtype {
+                wire::IDN =>        IdentReq,
+                wire::DESCRIBE =>   DescribeReq,
+                wire::DESCRIBING => DescribeRep { id: spec1, desc: data },
+                wire::ACTIVATE =>   EventEnableReq { module: spec1 },
+                wire::ACTIVE =>     EventEnableRep { module: spec1 },
+                wire::DEACTIVATE => EventDisableReq { module: spec1 },
+                wire::INACTIVE =>   EventDisableRep { module: spec1 },
+                wire::PING =>       PingReq { token: spec1 },
+                wire::PONG =>       PingRep { token: spec1, data },
+                wire::ERROR =>      ErrorRep { class: spec1, report: data },
+                wire::DO =>         CommandReq { module: spec1, command: spec2.expect("XXX"), arg: data },
+                wire::DONE =>       CommandRep { module: spec1, command: spec2.expect("XXX"), result: data },
+                wire::CHANGE =>     ChangeReq { module: spec1, param: spec2.expect("XXX"), value: data },
+                wire::CHANGED =>    ChangeRep { module: spec1, param: spec2.expect("XXX"), value: data },
+                wire::READ =>       TriggerReq { module: spec1, param: spec2.expect("XXX") },
+                wire::UPDATE =>     Update { module: spec1, param: spec2.expect("XXX"), value: data },
+                _ => return Err(Error::new(ErrorKind::Protocol, "no such message type").into_msg(msg))
+            };
+            Ok(IncomingMsg(msg, parsed))
         } else if msg == IDENT_REPLY {
             // identify reply has a special format (to be compatible with SCPI)
-            Ok(IdentRep { encoded: IDENT_REPLY.into() })
+            Ok(IncomingMsg(msg, IdentRep { encoded: IDENT_REPLY.into() }))
         } else {
-            // treat otherwise undecodable messages like a help request
-            Err(ErrorRep { class: "ProtocolError".into(),
-                           report: json!([msg, "invalid message format", {}]) })
+            Err(Error::new(ErrorKind::Protocol, "invalid message format").into_msg(msg))
         }
     }
 }
@@ -204,5 +201,11 @@ impl fmt::Display for Msg {
                 write!(f, "{} {} {}", wire::ERROR, class, report),
             Quit => write!(f, "<eof>"),
         }
+    }
+}
+
+impl fmt::Display for IncomingMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }

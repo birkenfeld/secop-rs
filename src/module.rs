@@ -24,13 +24,13 @@
 
 use std::time::Duration;
 use log::*;
-use serde_json::{Value, json};
+use serde_json::Value;
 use derive_new::new;
 use crossbeam_channel::{Sender, Receiver, tick, select};
 
 use crate::config::ModuleConfig;
 use crate::errors::Error;
-use crate::proto::Msg;
+use crate::proto::{IncomingMsg, Msg};
 use crate::server::HId;
 
 /// Data that every module requires.
@@ -38,7 +38,7 @@ use crate::server::HId;
 pub struct ModInternals {
     name: String,
     config: ModuleConfig,
-    req_receiver: Receiver<(HId, Msg)>,
+    req_receiver: Receiver<(HId, IncomingMsg)>,
     rep_sender: Sender<(Option<HId>, Msg)>,
 }
 
@@ -72,7 +72,7 @@ pub trait ModuleBase {
     #[inline]
     fn config(&self) -> &ModuleConfig { &self.internals().config }
     #[inline]
-    fn req_receiver(&self) -> &Receiver<(HId, Msg)> { &self.internals().req_receiver }
+    fn req_receiver(&self) -> &Receiver<(HId, IncomingMsg)> { &self.internals().req_receiver }
     #[inline]
     fn rep_sender(&self) -> &Sender<(Option<HId>, Msg)> { &self.internals().rep_sender }
 
@@ -90,24 +90,18 @@ pub trait ModuleBase {
         loop {
             select! {
                 recv(self.req_receiver()) -> res => if let Ok((hid, req)) = res {
-                    let rep = match req {
+                    let rep = match req.1 {
                         Msg::ChangeReq { module, param, value } => match self.change(&param, value) {
                             Ok(value) => Msg::ChangeRep { module, param, value },
-                            Err(e) => Msg::ErrorRep { class: "Error".into(),
-                                                      // TODO
-                                                      report: json!(["your request", "ERR", {}]) }
+                            Err(e) => e.into_msg(req.0),
                         },
                         Msg::CommandReq { module, command, arg } => match self.command(&command, arg) {
                             Ok(result) => Msg::CommandRep { module, command, result },
-                            Err(e) => Msg::ErrorRep { class: "Error".into(),
-                                                      // TODO
-                                                      report: json!(["your request", "ERR", {}]) }
+                            Err(e) => e.into_msg(req.0),
                         },
                         Msg::TriggerReq { module, param } => match self.trigger(&param) {
                             Ok(value) => Msg::Update { module, param, value },
-                            Err(e) => Msg::ErrorRep { class: "Error".into(),
-                                                      // TODO
-                                                      report: json!(["your request", "ERR", {}]) }
+                            Err(e) => e.into_msg(req.0),
                         },
                         _ => {
                             warn!("message should not arrive here: {}", req);

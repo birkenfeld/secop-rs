@@ -22,7 +22,12 @@
 //
 //! Enumeration of possible SECoP errors.
 
+use std::borrow::Cow;
 use std::{error, fmt, result};
+use serde_json::json;
+
+use crate::proto::Msg;
+
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -52,11 +57,27 @@ pub enum ErrorKind {
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
+    message: Cow<'static, str>,
 }
 
 impl Error {
-    pub fn new(kind: ErrorKind) -> Self {
-        Self { kind }
+    pub fn new(kind: ErrorKind, msg: &str) -> Self {
+        Self { kind, message: msg.to_string().into() }
+    }
+
+    pub fn new_owned(kind: ErrorKind, msg: String) -> Self {
+        Self { kind, message: msg.into() }
+    }
+
+    pub fn bad_value(msg: &'static str) -> Self {
+        Self { kind: ErrorKind::BadValue, message: msg.into() }
+    }
+
+    pub fn into_msg(self, msg: String) -> Msg {
+        Msg::ErrorRep {
+            class: error::Error::description(&self).into(),
+            report: json!([msg, self.message, {}])
+        }
     }
 }
 

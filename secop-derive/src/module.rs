@@ -109,23 +109,12 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             static ref #type_static : datatype_type!(#type_expr) = #type_expr;
         });
         par_read_arms.push(quote! {
-            #name => match self.#read_method() {
-                Ok(v)  => #type_static.to_json(v)
-                                      .map_err(|e| Error::new(ErrorKind::BadValue))?,
-                Err(v) => return Err(Error::new(ErrorKind::CommandFailed)) // TODO
-            }
+            #name => #type_static.to_json(self.#read_method()?)?
         });
         par_write_arms.push(if p.readonly {
-            quote! {
-                #name => return Err(Error::new(ErrorKind::ReadOnly)) // TODO
-            }
+            quote! { #name => return Err(Error::new(ErrorKind::ReadOnly, "")) }
         } else {
-            quote! {
-                #name => match #type_static.from_json(&value) {
-                    Ok(v)  => if let Err(e) = self.#write_method(v) { return Err(e) },
-                    Err(v) => return Err(Error::new(ErrorKind::BadValue)) // TODO
-                }
-            }
+            quote! { #name => self.#write_method(#type_static.from_json(&value)?)? }
         });
         if polling != 0 {
             let name_id = Ident::new(&name, Span::call_site());
@@ -180,14 +169,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             static ref #restype_static : datatype_type!(#restype_expr) = #restype_expr;
         });
         cmd_arms.push(quote! {
-            #name => match #argtype_static.from_json(&arg) {
-                Ok(v) => match self.#do_method(v) {
-                    Ok(res) => #restype_static.to_json(res)
-                                              .map_err(|e| Error::new(ErrorKind::BadValue)),
-                    Err(e)  => Err(Error::new(ErrorKind::CommandFailed)) // TODO
-                },
-                Err(e) => Err(Error::new(ErrorKind::BadValue)) // TODO
-            }
+            #name => #restype_static.to_json(self.#do_method(#argtype_static.from_json(&arg)?)?)
         });
         descriptive.push(quote! {
             json!([#name, {
@@ -205,6 +187,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         use lazy_static::lazy_static;
         use crate::errors::{Error, ErrorKind, Result};
         use crate::proto::Msg;
+        use crate::util::localtime;
 
         lazy_static! {
             #( #statics )*
@@ -238,24 +221,24 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             fn change(&mut self, param: &str, value: Value) -> Result<Value> {
                 match param {
                     #( #par_write_arms, )*
-                    _ => return Err(Error::new(ErrorKind::NoSuchParameter)) // TODO
+                    _ => return Err(Error::new(ErrorKind::NoSuchParameter, ""))
                 }
-                // TODO: emit change message here
-                Ok(json!([value, {}]))
+                // TODO: potentially emit change message here
+                Ok(json!([value, {"t": localtime()}]))
             }
 
             fn trigger(&mut self, param: &str) -> Result<Value> {
-                let val = match param {
+                let value = match param {
                     #( #par_read_arms, )*
-                    _ => return Err(Error::new(ErrorKind::NoSuchParameter)) // TODO
+                    _ => return Err(Error::new(ErrorKind::NoSuchParameter, ""))
                 };
-                Ok(json!([val, {}]))
+                Ok(json!([value, {"t": localtime()}]))
             }
 
             fn command(&mut self, cmd: &str, arg: Value) -> Result<Value> {
                 match cmd {
                     #( #cmd_arms, )*
-                    _ => Err(Error::new(ErrorKind::NoSuchCommand)) // TODO
+                    _ => Err(Error::new(ErrorKind::NoSuchCommand, ""))
                 }
             }
 

@@ -86,6 +86,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         const #const_name: () = {
             use serde_json::{json, Value};
             use lazy_static::lazy_static;
+            use crate::errors::Error;
 
             lazy_static! {
                 #( #statics )*
@@ -96,22 +97,23 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
                 fn type_json(&self) -> Value {
                     json!(["struct", { #( #descr_members )* }])
                 }
-                fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, &'static str> {
+                fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, Error> {
                     let #name { #( #members )* } = val;
                     Ok(json!({ #( #member_to_json )* }))
                 }
-                fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, &'static str> {
+                fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, Error> {
                     if let Some(obj) = val.as_object() {
                         #(
                             if #member_contains {
-                                return Err(concat!("missing ", #member_names, " in object"));
+                                return Err(Error::bad_value(concat!("missing ", #member_names,
+                                                                    " in object")));
                             }
                         )*
                         Ok(#name {
                             #( #member_from_json )*
                         })
                     } else {
-                        Err("expected object")
+                        Err(Error::bad_value("expected object"))
                     }
                 }
             }
@@ -155,28 +157,29 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
             use serde_json::{json, Value};
+            use crate::errors::Error;
 
             impl crate::types::TypeDesc for #struct_name {
                 type Repr = #name;
                 fn type_json(&self) -> Value {
                     json!(["enum", { #( #descr_members )* }])
                 }
-                fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, &'static str> {
+                fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, Error> {
                     Ok(json!(val as i64))
                 }
-                fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, &'static str> {
+                fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, Error> {
                     if let Some(s) = val.as_str() {
                         match s {
                             #( #str_arms )*
-                            _ => Err("string not an enum member")
+                            _ => Err(Error::bad_value("string not an enum member"))
                         }
                     } else if let Some(i) = val.as_i64() {
                         match i {
                             #( #int_arms )*
-                            _ => Err("integer not an enum member")
+                            _ => Err(Error::bad_value("integer not an enum member"))
                         }
                     } else {
-                        Err("expected string or integer")
+                        Err(Error::bad_value("expected string or integer"))
                     }
                 }
             }
