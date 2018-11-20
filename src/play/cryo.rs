@@ -59,7 +59,7 @@ struct CryoSimulator {
     vars: Arc<Mutex<StateVars>>,
 }
 
-fn clamp(v: f64, min: f64, max: f64) -> f64 { v.min(max).max(min) }
+fn clamp(v: f64, min: f64, max: f64) -> f64 { v.min(max.max(min)).max(min.min(max)) }
 fn sleep_ms(v: u64) { thread::sleep(Duration::from_millis(v)) }
 
 /// Ported from the NICOS simulator, for comments see nicos/devices/generic/virtual.py
