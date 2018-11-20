@@ -36,7 +36,7 @@ use crossbeam_channel::{unbounded, Sender, Receiver, select};
 use serde_json::{Value, json};
 
 use crate::config::ServerConfig;
-use crate::errors::{Error, ErrorKind};
+use crate::errors::Error;
 use crate::module::ModInternals;
 use crate::proto::{IncomingMsg, Msg, Msg::*, IDENT_REPLY};
 use crate::util::localtime;

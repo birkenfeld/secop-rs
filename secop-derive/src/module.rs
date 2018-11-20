@@ -22,6 +22,7 @@
 //
 //! Derive a SECoP Module implementation for individual modules.
 
+use std::collections::HashSet;
 use syn::{Expr, Ident, spanned::Spanned};
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
@@ -71,8 +72,6 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let poll_struct_name = Ident::new(&format!("{}PollParams", input.ast().ident),
                                       Span::call_site());
 
-    // TODO: check lowercase-uniqueness of params
-
     // parse parameter and command attributes on the main struct
     for attr in &input.ast().attrs {
         if attr.path.segments[0].ident == "param" {
@@ -88,6 +87,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
     }
 
+    let mut lc_names = HashSet::new();
+
     // prepare snippets of code to generate
     let mut statics = vec![];
     let mut par_read_arms = vec![];
@@ -101,6 +102,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     for p in params {
         // TODO: process default
         let SecopParam { name, doc, readonly, datatype, unit, group, polling, .. } = p;
+
+        if !lc_names.insert(name.to_lowercase()) {
+            panic!("param/cmd name {} is not unique", name)
+        }
+
         let type_static = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
         let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
         let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
@@ -159,6 +165,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
     for c in commands {
         let SecopCommand { name, doc, .. } = c;
+
+        if !lc_names.insert(name.to_lowercase()) {
+            panic!("param/cmd name {} is not unique", name)
+        }
+
         let argtype_static = Ident::new(&format!("CMD_ARG_{}", name), Span::call_site());
         let argtype_expr = syn::parse_str::<Expr>(&c.argtype).expect("unparseable datatype");
         let restype_static = Ident::new(&format!("CMD_RES_{}", name), Span::call_site());
@@ -201,7 +212,6 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         gen impl crate::module::ModuleBase for @Self {
             type PollParams = #poll_struct_name;
 
-            // XXX: this expects an "internals" member...
             fn internals(&self) -> &ModInternals { &self.internals }
 
             fn describe(&self) -> Value {
