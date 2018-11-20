@@ -197,6 +197,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         });
     }
 
+    let poll_busy_params = &poll_busy_params;
+
     // generate the final code!
     let generated = input.gen_impl(quote! {
         use serde_json::{Value, json};
@@ -259,14 +261,14 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
             fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams) {
                 if pp.status.0 != StatusConst::Busy {
-                    #( #&poll_busy_params )*
+                    #( #poll_busy_params )*
                 }
                 #( #poll_other_params )*
             }
 
             fn poll_busy(&mut self, n: usize, pp: &mut Self::PollParams) {
                 if pp.status.0 == StatusConst::Busy {
-                    #( #&poll_busy_params )*
+                    #( #poll_busy_params )*
                 }
             }
         }
