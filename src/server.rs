@@ -36,6 +36,7 @@ use crossbeam_channel::{unbounded, Sender, Receiver, select};
 use serde_json::{Value, json};
 
 use crate::config::ServerConfig;
+use crate::errors::{Error, ErrorKind};
 use crate::module::ModInternals;
 use crate::proto::{IncomingMsg, Msg, Msg::*, IDENT_REPLY};
 use crate::util::localtime;
@@ -160,12 +161,17 @@ impl Dispatcher {
                         Do { module, .. } | Change { module, .. } | Read { module, .. } => {
                             if let Some(chan) = self.modules.get(module) {
                                 chan.send((hid, req)).unwrap();
+                            } else {
+                                self.send_back(hid, &Error::no_module().into_msg(req.0));
                             }
                         }
                         Activate { module } => {
                             // TODO: send out an update message for all params
                             if !module.is_empty() {
-                                // TODO: check for module existing
+                                if !self.modules.contains_key(module) {
+                                    self.send_back(hid, &Error::no_module().into_msg(req.0));
+                                    continue;
+                                }
                                 self.active.entry(module.clone()).or_default().insert(hid);
                             } else {
                                 for module in self.modules.keys() {
@@ -176,6 +182,10 @@ impl Dispatcher {
                         }
                         Deactivate { module } => {
                             if !module.is_empty() {
+                                if !self.modules.contains_key(module) {
+                                    self.send_back(hid, &Error::no_module().into_msg(req.0));
+                                    continue;
+                                }
                                 self.active.entry(module.clone()).or_default().remove(&hid);
                             } else {
                                 for module in self.modules.keys() {

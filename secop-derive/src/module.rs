@@ -221,7 +221,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             fn change(&mut self, param: &str, value: Value) -> Result<Value> {
                 match param {
                     #( #par_write_arms, )*
-                    _ => return Err(Error::new(ErrorKind::NoSuchParameter, ""))
+                    _ => return Err(Error::no_param())
                 }
                 // TODO: potentially emit change message here
                 Ok(json!([value, {"t": localtime()}]))
@@ -230,7 +230,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             fn read(&mut self, param: &str) -> Result<Value> {
                 let value = match param {
                     #( #par_read_arms, )*
-                    _ => return Err(Error::new(ErrorKind::NoSuchParameter, ""))
+                    _ => return Err(Error::no_param())
                 };
                 Ok(json!([value, {"t": localtime()}]))
             }
@@ -238,7 +238,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             fn command(&mut self, cmd: &str, arg: Value) -> Result<Value> {
                 match cmd {
                     #( #cmd_arms, )*
-                    _ => Err(Error::new(ErrorKind::NoSuchCommand, ""))
+                    _ => Err(Error::no_command())
                 }
             }
 

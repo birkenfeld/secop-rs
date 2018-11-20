@@ -68,6 +68,18 @@ impl Error {
         Self { kind: ErrorKind::BadValue, message: msg.into() }
     }
 
+    pub fn no_module() -> Self {
+        Self { kind: ErrorKind::NoSuchModule, message: "".into() }
+    }
+
+    pub fn no_param() -> Self {
+        Self { kind: ErrorKind::NoSuchParameter, message: "".into() }
+    }
+
+    pub fn no_command() -> Self {
+        Self { kind: ErrorKind::NoSuchCommand, message: "".into() }
+    }
+
     pub fn into_msg(self, msg: String) -> Msg {
         Msg::ErrMsg {
             class: error::Error::description(&self).into(),
