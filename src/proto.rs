@@ -52,37 +52,37 @@ pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2";
 #[derive(Debug, Clone)]
 pub enum Msg {
     /// identify request
-    IdentReq,
+    Idn,
     /// identify reply
-    IdentRep { encoded: String },
+    IdnReply { encoded: String },
     /// description request
-    DescribeReq,
+    Describe,
     /// description reply
-    DescribeRep { id: String, desc: Value },
+    Describing { id: String, desc: Value },
     /// event enable request
-    EventEnableReq { module: String },
+    Activate { module: String },
     /// event enable reply
-    EventEnableRep { module: String },
+    Active { module: String },
     /// event disable request
-    EventDisableReq { module: String },
+    Deactivate { module: String },
     /// event disable reply
-    EventDisableRep { module: String },
+    Inactive { module: String },
     /// command execution request
-    CommandReq { module: String, command: String, arg: Value },
+    Do { module: String, command: String, arg: Value },
     /// command result
-    CommandRep { module: String, command: String, result: Value },
+    Done { module: String, command: String, result: Value },
     /// change request
-    ChangeReq { module: String, param: String, value: Value },
+    Change { module: String, param: String, value: Value },
     /// change result
-    ChangeRep { module: String, param: String, value: Value },
+    Changed { module: String, param: String, value: Value },
     /// trigger/poll request
-    TriggerReq { module: String, param: String },
+    Read { module: String, param: String },
     /// heartbeat request
-    PingReq { token: String },
+    Ping { token: String },
     /// heartbeat reply
-    PingRep { token: String, data: Value },
+    Pong { token: String, data: Value },
     /// error reply
-    ErrorRep { class: String, report: Value },
+    ErrMsg { class: String, report: Value },
     /// update event
     Update { module: String, param: String, value: Value },
     /// not a protocol message, indicates the connection is done
@@ -130,28 +130,28 @@ impl Msg {
                 }
             } else { Value::Null };
             let parsed = match msgtype {
-                wire::IDN =>        IdentReq,
-                wire::DESCRIBE =>   DescribeReq,
-                wire::DESCRIBING => DescribeRep { id: spec1, desc: data },
-                wire::ACTIVATE =>   EventEnableReq { module: spec1 },
-                wire::ACTIVE =>     EventEnableRep { module: spec1 },
-                wire::DEACTIVATE => EventDisableReq { module: spec1 },
-                wire::INACTIVE =>   EventDisableRep { module: spec1 },
-                wire::PING =>       PingReq { token: spec1 },
-                wire::PONG =>       PingRep { token: spec1, data },
-                wire::ERROR =>      ErrorRep { class: spec1, report: data },
-                wire::DO =>         CommandReq { module: spec1, command: spec2.expect("XXX"), arg: data },
-                wire::DONE =>       CommandRep { module: spec1, command: spec2.expect("XXX"), result: data },
-                wire::CHANGE =>     ChangeReq { module: spec1, param: spec2.expect("XXX"), value: data },
-                wire::CHANGED =>    ChangeRep { module: spec1, param: spec2.expect("XXX"), value: data },
-                wire::READ =>       TriggerReq { module: spec1, param: spec2.expect("XXX") },
+                wire::READ =>       Read { module: spec1, param: spec2.expect("XXX") },
+                wire::CHANGE =>     Change { module: spec1, param: spec2.expect("XXX"), value: data },
+                wire::DO =>         Do { module: spec1, command: spec2.expect("XXX"), arg: data },
+                wire::DESCRIBE =>   Describe,
+                wire::ACTIVATE =>   Activate { module: spec1 },
+                wire::DEACTIVATE => Deactivate { module: spec1 },
+                wire::PING =>       Ping { token: spec1 },
+                wire::IDN =>        Idn,
                 wire::UPDATE =>     Update { module: spec1, param: spec2.expect("XXX"), value: data },
+                wire::CHANGED =>    Changed { module: spec1, param: spec2.expect("XXX"), value: data },
+                wire::DONE =>       Done { module: spec1, command: spec2.expect("XXX"), result: data },
+                wire::DESCRIBING => Describing { id: spec1, desc: data },
+                wire::ACTIVE =>     Active { module: spec1 },
+                wire::INACTIVE =>   Inactive { module: spec1 },
+                wire::PONG =>       Pong { token: spec1, data },
+                wire::ERROR =>      ErrMsg { class: spec1, report: data },
                 _ => return Err(Error::new(ErrorKind::Protocol, "no such message type").into_msg(msg))
             };
             Ok(IncomingMsg(msg, parsed))
         } else if msg == IDENT_REPLY {
             // identify reply has a special format (to be compatible with SCPI)
-            Ok(IncomingMsg(msg, IdentRep { encoded: IDENT_REPLY.into() }))
+            Ok(IncomingMsg(msg, IdnReply { encoded: IDENT_REPLY.into() }))
         } else {
             Err(Error::new(ErrorKind::Protocol, "invalid message format").into_msg(msg))
         }
@@ -165,39 +165,41 @@ impl Msg {
 impl fmt::Display for Msg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            IdentReq => f.write_str(wire::IDN),
-            IdentRep { encoded } => f.write_str(&encoded),
-            DescribeReq => f.write_str(wire::DESCRIBE),
-            DescribeRep { id, desc } => write!(f, "{} {} {}", wire::DESCRIBING, id, desc),
-            EventEnableReq { module } =>
-                if module.is_empty() { f.write_str(wire::ACTIVATE) }
-                else { write!(f, "{} {}", wire::ACTIVATE, module) },
-            EventEnableRep { module } =>
-                if module.is_empty() { f.write_str(wire::ACTIVE) }
-                else { write!(f, "{} {}", wire::ACTIVE, module) },
-            EventDisableReq { module } =>
-                if module.is_empty() { f.write_str(wire::DEACTIVATE) }
-                else { write!(f, "{} {}", wire::DEACTIVATE, module) },
-            EventDisableRep { module } =>
-                if module.is_empty() { f.write_str(wire::INACTIVE) }
-                else { write!(f, "{} {}", wire::INACTIVE, module) },
-            CommandReq { module, command, arg } =>
-                write!(f, "{} {}:{} {}", wire::DO, module, command, arg),
-            CommandRep { module, command, result } =>
-                write!(f, "{} {}:{} {}", wire::DONE, module, command, result),
-            ChangeReq { module, param, value } =>
-                write!(f, "{} {}:{} {}", wire::CHANGE, module, param, value),
-            ChangeRep { module, param, value } =>
-                write!(f, "{} {}:{} {}", wire::CHANGED, module, param, value),
-            TriggerReq { module, param } =>
-                write!(f, "{} {}:{}", wire::READ, module, param),
             Update { module, param, value } =>
                 write!(f, "{} {}:{} {}", wire::UPDATE, module, param, value),
-            PingReq { token } =>
+            Changed { module, param, value } =>
+                write!(f, "{} {}:{} {}", wire::CHANGED, module, param, value),
+            Done { module, command, result } =>
+                write!(f, "{} {}:{} {}", wire::DONE, module, command, result),
+            Describing { id, desc } =>
+                write!(f, "{} {} {}", wire::DESCRIBING, id, desc),
+            Active { module } =>
+                if module.is_empty() { f.write_str(wire::ACTIVE) }
+                else { write!(f, "{} {}", wire::ACTIVE, module) },
+            Inactive { module } =>
+                if module.is_empty() { f.write_str(wire::INACTIVE) }
+                else { write!(f, "{} {}", wire::INACTIVE, module) },
+            Pong { token, data } =>
+                write!(f, "{} {} {}", wire::PONG, token, data),
+            Idn => f.write_str(wire::IDN),
+            IdnReply { encoded } => f.write_str(&encoded),
+            Read { module, param } =>
+                write!(f, "{} {}:{}", wire::READ, module, param),
+            Change { module, param, value } =>
+                write!(f, "{} {}:{} {}", wire::CHANGE, module, param, value),
+            Do { module, command, arg } =>
+                write!(f, "{} {}:{} {}", wire::DO, module, command, arg),
+            Describe => f.write_str(wire::DESCRIBE),
+            Activate { module } =>
+                if module.is_empty() { f.write_str(wire::ACTIVATE) }
+                else { write!(f, "{} {}", wire::ACTIVATE, module) },
+            Deactivate { module } =>
+                if module.is_empty() { f.write_str(wire::DEACTIVATE) }
+                else { write!(f, "{} {}", wire::DEACTIVATE, module) },
+            Ping { token } =>
                 if token.is_empty() { f.write_str(wire::PING) }
                 else { write!(f, "{} {}", wire::PING, token) },
-            PingRep { token, data } => write!(f, "{} {} {}", wire::PONG, token, data),
-            ErrorRep { class, report } =>
+            ErrMsg { class, report } =>
                 write!(f, "{} {} {}", wire::ERROR, class, report),
             Quit => write!(f, "<eof>"),
         }

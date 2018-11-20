@@ -74,7 +74,7 @@ impl Error {
     }
 
     pub fn into_msg(self, msg: String) -> Msg {
-        Msg::ErrorRep {
+        Msg::ErrMsg {
             class: error::Error::description(&self).into(),
             report: json!([msg, self.message, {}])
         }

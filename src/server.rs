@@ -23,7 +23,8 @@
 //! This module contains the server instance itself, and associated objects to
 //! handle connections and message routing.
 
-use std::io::{self, prelude::*};
+use std::io;
+use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
 use std::thread;
@@ -149,15 +150,13 @@ impl Dispatcher {
                 },
                 recv(self.requests) -> res => if let Ok((hid, req)) = res {
                     debug!("got request {} -> {}", hid, req);
-                    match req.1 {
-                        CommandReq { ref module, .. } |
-                        ChangeReq  { ref module, .. } |
-                        TriggerReq { ref module, .. } => {
-                            if let Some(chan) = self.modules.get(&**module) {
+                    match &req.1 {
+                        Do { module, .. } | Change { module, .. } | Read { module, .. } => {
+                            if let Some(chan) = self.modules.get(module) {
                                 chan.send((hid, req)).unwrap();
                             }
                         }
-                        EventEnableReq { module } => {
+                        Activate { module } => {
                             // TODO: send out an update message for all params
                             if !module.is_empty() {
                                 // TODO: check for module existing
@@ -167,9 +166,11 @@ impl Dispatcher {
                                     self.active.entry(module.clone()).or_default().insert(hid);
                                 }
                             }
-                            self.handlers[&hid].send(format!("{}\n", EventEnableRep { module })).unwrap();
+                            self.handlers[&hid].send(format!("{}\n", Active {
+                                module: module.clone()
+                            })).unwrap();
                         }
-                        EventDisableReq { module } => {
+                        Deactivate { module } => {
                             if !module.is_empty() {
                                 self.active.entry(module.clone()).or_default().remove(&hid);
                             } else {
@@ -177,10 +178,12 @@ impl Dispatcher {
                                     self.active.entry(module.clone()).or_default().remove(&hid);
                                 }
                             }
-                            self.handlers[&hid].send(format!("{}\n", EventDisableRep { module })).unwrap();
+                            self.handlers[&hid].send(format!("{}\n", Inactive {
+                                module: module.clone()
+                            })).unwrap();
                         }
-                        DescribeReq => {
-                            self.handlers[&hid].send(format!("{}\n", DescribeRep {
+                        Describe => {
+                            self.handlers[&hid].send(format!("{}\n", Describing {
                                 id: ".".into(),
                                 desc: self.descriptive.clone()
                             })).unwrap();
@@ -197,8 +200,8 @@ impl Dispatcher {
                 recv(self.replies) -> res => if let Ok((hid, rep)) = res {
                     debug!("got reply {:?} -> {}", hid, rep);
                     match hid {
-                        None => if let Update { ref module, .. } = rep {
-                            if let Some(set) = self.active.get(&**module) {
+                        None => if let Update { module, .. } = &rep {
+                            if let Some(set) = self.active.get(module) {
                                 for hid in set {
                                     self.handlers[hid].send(format!("{}\n", rep)).unwrap();
                                 }
@@ -264,17 +267,17 @@ impl Handler {
     fn handle_msg(&self, msg: IncomingMsg) {
         match msg.1 {
             // most messages must go through the dispatcher to a module
-            ChangeReq { .. } | CommandReq { .. } | TriggerReq { .. } | DescribeReq |
-            EventEnableReq { .. } | EventDisableReq { .. } => {
+            Change { .. } | Do { .. } | Read { .. } | Describe |
+            Activate { .. } | Deactivate { .. } => {
                 self.req_sender.send((self.hid, msg)).unwrap();
             }
             // but a few of them we can respond to from here
-            PingReq { token } => {
+            Ping { token } => {
                 let data = json!([null, {"t": localtime()}]);
-                self.send_back(PingRep { token, data });
+                self.send_back(Pong { token, data });
             }
-            IdentReq => {
-                self.send_back(IdentRep { encoded: IDENT_REPLY.into() });
+            Idn => {
+                self.send_back(IdnReply { encoded: IDENT_REPLY.into() });
             }
             _ => {
                 warn!("message {:?} not handled yet", msg.1);

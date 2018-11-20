@@ -91,15 +91,15 @@ pub trait ModuleBase {
             select! {
                 recv(self.req_receiver()) -> res => if let Ok((hid, req)) = res {
                     let rep = match req.1 {
-                        Msg::ChangeReq { module, param, value } => match self.change(&param, value) {
-                            Ok(value) => Msg::ChangeRep { module, param, value },
+                        Msg::Change { module, param, value } => match self.change(&param, value) {
+                            Ok(value) => Msg::Changed { module, param, value },
                             Err(e) => e.into_msg(req.0),
                         },
-                        Msg::CommandReq { module, command, arg } => match self.command(&command, arg) {
-                            Ok(result) => Msg::CommandRep { module, command, result },
+                        Msg::Do { module, command, arg } => match self.command(&command, arg) {
+                            Ok(result) => Msg::Done { module, command, result },
                             Err(e) => e.into_msg(req.0),
                         },
-                        Msg::TriggerReq { module, param } => match self.trigger(&param) {
+                        Msg::Read { module, param } => match self.trigger(&param) {
                             Ok(value) => Msg::Update { module, param, value },
                             Err(e) => e.into_msg(req.0),
                         },
