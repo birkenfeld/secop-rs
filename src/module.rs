@@ -109,9 +109,6 @@ pub trait ModuleBase {
                                                       // TODO
                                                       report: json!(["your request", "ERR", {}]) }
                         },
-                        Msg::DescribeReq => {
-                            Msg::DescribeRep { id: self.name().into(), desc: self.describe() }
-                        },
                         _ => {
                             warn!("message should not arrive here: {}", req);
                             continue;
