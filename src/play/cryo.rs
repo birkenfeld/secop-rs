@@ -84,7 +84,7 @@ impl CryoSimulator {
             let h = t - last_t;
 
             if h < LOOPDELAY/damper {
-                sleep_ms(1000 * clamp(LOOPDELAY/damper - h, 0.1, 60.) as u64);
+                sleep_ms((1000. * clamp(LOOPDELAY/damper - h, 0.1, 60.)) as u64);
                 continue;
             }
 
