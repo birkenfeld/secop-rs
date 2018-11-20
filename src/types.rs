@@ -291,7 +291,7 @@ macro_rules! impl_tuple {
                 json!(["tuple", $(self.$idx.type_json()),*])
             }
             fn to_json(&self, val: Self::Repr) -> Result<Value, &'static str> {
-                Ok(json!([ $(self.$idx.to_json(val.$idx)),* ]))
+                Ok(json!([ $(self.$idx.to_json(val.$idx)?),* ]))
             }
             fn from_json(&self, val: &Value) -> Result<Self::Repr, &'static str> {
                 if let Some(arr) = val.as_array() {

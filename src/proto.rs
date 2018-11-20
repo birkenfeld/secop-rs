@@ -51,7 +51,7 @@ pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2";
 /// over the network in the protocol.
 ///
 /// String entries here can be borrowed from a network buffer, or owned.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Msg {
     /// identify request
     IdentReq,
