@@ -76,7 +76,7 @@ fn main() {
     let signal_chan = chan_signal::notify(&[chan_signal::Signal::INT,
                                             chan_signal::Signal::TERM]);
 
-    let cfgname = args.value_of("config").unwrap();
+    let cfgname = args.value_of("config").expect("is required");
 
     if let Err(err) = mlzlog::init(Some(log_path), cfgname, false,
                                    args.is_present("verbose"),
@@ -97,7 +97,7 @@ fn main() {
                 error!("could not initialize server: {}", err);
             } else {
                 // server is running; wait for a signal to finish
-                signal_chan.recv().unwrap();
+                signal_chan.recv().expect("sender never closed");
             }
         }
     }

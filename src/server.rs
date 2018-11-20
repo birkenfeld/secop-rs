@@ -68,7 +68,7 @@ impl Server {
             let new_req_sender = req_sender.clone();
             let (rep_sender, rep_receiver) = unbounded();
             let disp_rep_sender = rep_sender.clone();
-            let hid = NonZeroU64::new(next_hid).unwrap();
+            let hid = NonZeroU64::new(next_hid).expect("is nonzero");
             con_sender.send((hid, disp_rep_sender)).unwrap();
             thread::spawn(move || Handler::new(hid, stream, addr,
                                                new_req_sender, rep_sender, rep_receiver).handle());
@@ -140,6 +140,12 @@ struct Dispatcher {
 }
 
 impl Dispatcher {
+    fn send_back(&self, hid: HId, msg: &Msg) {
+        if let Some(chan) = self.handlers.get(&hid) {
+            let _ = chan.send(format!("{}\n", msg));
+        }
+    }
+
     fn run(mut self) {
         mlzlog::set_thread_prefix("Dispatcher: ".into());
         loop {
@@ -166,9 +172,7 @@ impl Dispatcher {
                                     self.active.entry(module.clone()).or_default().insert(hid);
                                 }
                             }
-                            self.handlers[&hid].send(format!("{}\n", Active {
-                                module: module.clone()
-                            })).unwrap();
+                            self.send_back(hid, &Active { module: module.clone() });
                         }
                         Deactivate { module } => {
                             if !module.is_empty() {
@@ -178,17 +182,16 @@ impl Dispatcher {
                                     self.active.entry(module.clone()).or_default().remove(&hid);
                                 }
                             }
-                            self.handlers[&hid].send(format!("{}\n", Inactive {
-                                module: module.clone()
-                            })).unwrap();
+                            self.send_back(hid, &Inactive { module: module.clone() });
                         }
                         Describe => {
-                            self.handlers[&hid].send(format!("{}\n", Describing {
+                            self.send_back(hid, &Describing {
                                 id: ".".into(),
                                 desc: self.descriptive.clone()
-                            })).unwrap();
+                            });
                         }
                         Quit => {
+                            info!("removing handler {}", hid);
                             self.handlers.remove(&hid);
                             for set in self.active.values_mut() {
                                 set.remove(&hid);
@@ -203,13 +206,11 @@ impl Dispatcher {
                         None => if let Update { module, .. } = &rep {
                             if let Some(set) = self.active.get(module) {
                                 for hid in set {
-                                    self.handlers[hid].send(format!("{}\n", rep)).unwrap();
+                                    self.send_back(*hid, &rep);
                                 }
                             }
                         },
-                        Some(hid) => if let Some(chan) = self.handlers.get(&hid) {
-                            chan.send(format!("{}\n", rep)).unwrap();
-                        }
+                        Some(hid) => self.send_back(hid, &rep)
                     }
                 }
             }

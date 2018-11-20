@@ -66,7 +66,7 @@ pub fn write_pidfile<P: AsRef<Path>>(pid_path: P) -> io::Result<()> {
     ensure_dir(pid_path)?;
     let file = pid_path.join("cache_rs.pid");
     let my_pid = read_link("/proc/self")?;
-    let my_pid = my_pid.as_os_str().to_str().unwrap().as_bytes();
+    let my_pid = my_pid.as_os_str().to_str().expect("valid ascii").as_bytes();
     File::create(file)?.write_all(my_pid)?;
     Ok(())
 }

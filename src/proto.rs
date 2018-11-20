@@ -42,7 +42,7 @@ lazy_static! {
       )?
     )?
     $
-    "#).unwrap();
+    "#).expect("valid regex");
 }
 
 pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2";
@@ -118,10 +118,10 @@ impl Msg {
     /// This matches a regular expression, and then creates a `Msg` if successful.
     pub fn parse(msg: String) -> Result<IncomingMsg, Msg> {
         if let Some(captures) = MSG_RE.captures(&msg) {
-            let msgtype = captures.get(1).unwrap().as_str();
+            let msgtype = captures.get(1).expect("is required").as_str();
             let mut split = captures.get(2).map(|m| m.as_str())
                                            .unwrap_or("").splitn(2, ':').map(Into::into);
-            let spec1 = split.next().unwrap();
+            let spec1 = split.next().expect("cannot be absent");
             let spec2 = split.next();
             let data = if let Some(jsonstr) = captures.get(3) {
                 match serde_json::from_str(jsonstr.as_str()) {
