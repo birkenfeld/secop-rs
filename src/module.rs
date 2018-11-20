@@ -55,16 +55,16 @@ pub trait Module : ModuleBase {
 
 /// Part of the Module trait to be implemented by the derive macro.
 pub trait ModuleBase {
-    type PollParams: Default;
+    type ParamCache: Default;
 
     fn change(&mut self, param: &str, value: Value) -> Result<Value, Error>;
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
     fn read(&mut self, param: &str) -> Result<Value, Error>;
     fn describe(&self) -> Value;
-    fn get_init_updates(&mut self, pp: &mut Self::PollParams) -> Vec<Msg>;
+    fn get_init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg>;
 
-    fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams);
-    fn poll_busy(&mut self, n: usize, pp: &mut Self::PollParams);
+    fn poll_normal(&mut self, n: usize, pcache: &mut Self::ParamCache);
+    fn poll_busy(&mut self, n: usize, pcache: &mut Self::ParamCache);
 
     #[inline]
     fn internals(&self) -> &ModInternals;
@@ -84,7 +84,7 @@ pub trait ModuleBase {
         let poll = tick(Duration::from_millis(1000));
         let poll_busy = tick(Duration::from_millis(200));
 
-        let mut poll_params = Self::PollParams::default();
+        let mut param_cache = Self::ParamCache::default();
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;
 
@@ -106,7 +106,7 @@ pub trait ModuleBase {
                         },
                         Msg::Activate { module } => {
                             Msg::InitUpdates { module: module,
-                                               updates: self.get_init_updates(&mut poll_params) }
+                                               updates: self.get_init_updates(&mut param_cache) }
                         },
                         _ => {
                             warn!("message should not arrive here: {}", req);
@@ -116,11 +116,11 @@ pub trait ModuleBase {
                     self.rep_sender().send((Some(hid), rep)).unwrap();
                 },
                 recv(poll) -> _ => {
-                    self.poll_normal(poll_normal_counter, &mut poll_params);
+                    self.poll_normal(poll_normal_counter, &mut param_cache);
                     poll_normal_counter = poll_normal_counter.wrapping_add(1);
                 },
                 recv(poll_busy) -> _ => {
-                    self.poll_busy(poll_busy_counter, &mut poll_params);
+                    self.poll_busy(poll_busy_counter, &mut param_cache);
                     poll_busy_counter = poll_busy_counter.wrapping_add(1);
                 }
             }

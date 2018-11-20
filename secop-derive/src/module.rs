@@ -69,7 +69,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut commands = Vec::new();
 
     let vis = &input.ast().vis;
-    let poll_struct_name = Ident::new(&format!("{}PollParams", input.ast().ident),
+    let param_cache_name = Ident::new(&format!("{}ParamCache", input.ast().ident),
                                       Span::call_site());
 
     // parse parameter and command attributes on the main struct
@@ -95,7 +95,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut par_write_arms = vec![];
     let mut cmd_arms = vec![];
     let mut descriptive = vec![];
-    let mut poll_struct = vec![];
+    let mut param_cache = vec![];
     let mut poll_busy_params = vec![];
     let mut poll_other_params = vec![];
     let mut init_updates = vec![];
@@ -124,8 +124,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             quote! { #name => self.#write_method(#type_static.from_json(&value)?)? }
         });
         let name_id = Ident::new(&name, Span::call_site());
-        poll_struct.push(quote! {
-            #name_id : <datatype_type!(#type_expr) as TypeDesc>::Repr,
+        param_cache.push(quote! {
+            #name_id : (<datatype_type!(#type_expr) as TypeDesc>::Repr, f64),
         });
         if polling != 0 {
             let polling_abs = polling.abs() as usize;
@@ -133,8 +133,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             let poll_it = quote! {
                 if n % #polling_abs == 0 {
                     if let Ok(value) = self.#read_method() {
-                        if value != pp.#name_id {
-                            pp.#name_id = value.clone();
+                        if value != pcache.#name_id.0 {
+                            pcache.#name_id = (value.clone(), localtime());
                             if let Ok(val_json) = #type_static.to_json(value) {
                                 self.rep_sender().send((Option::None,
                                                         Msg::Update { module: self.name().into(),
@@ -153,10 +153,10 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
         init_updates.push(quote! {
             // TODO: really ignore errors?
-            if let Ok(value) = #type_static.to_json(pp.#name_id.clone()) {
+            if let Ok(value) = #type_static.to_json(pcache.#name_id.0.clone()) {
                 res.push(Msg::Update { module: self.name().to_string(),
                                        param: #name.to_string(),
-                                       value: json!([value, {}]) }); // TODO timestamp
+                                       value: json!([value, {"t": pcache.#name_id.1}]) });
             }
         });
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
@@ -214,12 +214,12 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
 
         #[derive(Default)]
-        #vis struct #poll_struct_name {
-            #( #poll_struct )*
+        #vis struct #param_cache_name {
+            #( #param_cache )*
         }
 
         gen impl crate::module::ModuleBase for @Self {
-            type PollParams = #poll_struct_name;
+            type ParamCache = #param_cache_name;
 
             fn internals(&self) -> &ModInternals { &self.internals }
 
@@ -261,21 +261,21 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 }
             }
 
-            fn get_init_updates(&mut self, pp: &mut Self::PollParams) -> Vec<Msg> {
+            fn get_init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg> {
                 let mut res = Vec::new();
                 #( #init_updates )*
                 res
             }
 
-            fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams) {
-                if pp.status.0 != StatusConst::Busy {
+            fn poll_normal(&mut self, n: usize, pcache: &mut Self::ParamCache) {
+                if (pcache.status.0).0 != StatusConst::Busy {
                     #( #poll_busy_params )*
                 }
                 #( #poll_other_params )*
             }
 
-            fn poll_busy(&mut self, n: usize, pp: &mut Self::PollParams) {
-                if pp.status.0 == StatusConst::Busy {
+            fn poll_busy(&mut self, n: usize, pcache: &mut Self::ParamCache) {
+                if (pcache.status.0).0 == StatusConst::Busy {
                     #( #poll_busy_params )*
                 }
             }
