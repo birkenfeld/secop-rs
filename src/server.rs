@@ -88,6 +88,7 @@ impl Server {
         let (rep_sender, rep_receiver) = unbounded();
 
         // create the modules
+        let mut active_sets = HashMap::default();
         let mut mod_senders = HashMap::default();
         let mut module_desc = Vec::new();
 
@@ -98,6 +99,7 @@ impl Server {
             // replies go via a single one
             let mod_rep_sender = rep_sender.clone();
             let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender);
+            active_sets.insert(name.clone(), HashSet::default());
             mod_senders.insert(name, mod_sender);
             module_desc.push(play::run_module(int).expect("TODO handle me"));
         }
@@ -112,8 +114,8 @@ impl Server {
         // create the dispatcher
         let dispatcher = Dispatcher {
             descriptive: descriptive,
+            active: active_sets,
             handlers: HashMap::default(),
-            active: HashMap::default(),
             modules: mod_senders,
             connections: con_receiver,
             requests: req_receiver,
@@ -149,6 +151,10 @@ impl Dispatcher {
 
     fn run(mut self) {
         mlzlog::set_thread_prefix("Dispatcher: ".into());
+
+        // > 0 if a global activation is currently being processed.
+        let mut global_activate_remaining = 0;
+
         loop {
             select! {
                 recv(self.connections) -> res => if let Ok((hid, conn)) = res {
@@ -157,42 +163,64 @@ impl Dispatcher {
                 },
                 recv(self.requests) -> res => if let Ok((hid, req)) = res {
                     debug!("got request {} -> {}", hid, req);
-                    match &req.1 {
-                        Do { module, .. } | Change { module, .. } | Read { module, .. } => {
+                    match req.1 {
+                        Do { ref module, .. } |
+                        Change { ref module, .. } |
+                        Read { ref module, .. } => {
+                            // check if module exists
                             if let Some(chan) = self.modules.get(module) {
                                 chan.send((hid, req)).unwrap();
                             } else {
                                 self.send_back(hid, &Error::no_module().into_msg(req.0));
                             }
                         }
-                        Activate { module } => {
-                            // TODO: send out an update message for all params
+                        Activate { ref module } => {
+                            // The activate message requires an "update" of all parameters
+                            // to be sent before "active".  Other events should not be sent.
+                            // To do this, we send this on to the module / all modules.
+                            //
+                            // When all replies arrived, we trigger the Active message.
                             if !module.is_empty() {
-                                if !self.modules.contains_key(module) {
+                                // check if module exists, send message on to it
+                                if let Some(chan) = self.modules.get(module) {
+                                    chan.send((hid, req)).unwrap();
+                                } else {
                                     self.send_back(hid, &Error::no_module().into_msg(req.0));
                                     continue;
                                 }
-                                self.active.entry(module.clone()).or_default().insert(hid);
                             } else {
-                                for module in self.modules.keys() {
-                                    self.active.entry(module.clone()).or_default().insert(hid);
+                                // this is a global activation
+                                if global_activate_remaining > 0 {
+                                    // only one can be inflight
+                                    self.send_back(hid, &Error::protocol(
+                                        "already activating").into_msg(req.0));
+                                    continue;
                                 }
+                                // send this on to all modules - the "module" entry
+                                // (which is empty here) will be replicated in the
+                                // responding InitUpdates message
+                                for chan in self.modules.values() {
+                                    chan.send((hid, req.clone())).unwrap();
+                                }
+                                global_activate_remaining = self.modules.len();
                             }
-                            self.send_back(hid, &Active { module: module.clone() });
                         }
                         Deactivate { module } => {
+                            // Deactivation is done instantly, much easier than activation.
                             if !module.is_empty() {
-                                if !self.modules.contains_key(module) {
+                                // check if module exists
+                                if !self.modules.contains_key(&module) {
                                     self.send_back(hid, &Error::no_module().into_msg(req.0));
                                     continue;
                                 }
-                                self.active.entry(module.clone()).or_default().remove(&hid);
+                                self.active.get_mut(&module).expect("always there").remove(&hid);
                             } else {
+                                // remove handler as active from all modules
                                 for module in self.modules.keys() {
-                                    self.active.entry(module.clone()).or_default().remove(&hid);
+                                    self.active.get_mut(module).expect("always there").remove(&hid);
                                 }
                             }
-                            self.send_back(hid, &Inactive { module: module.clone() });
+                            self.send_back(hid, &Inactive { module });
                         }
                         Describe => {
                             self.send_back(hid, &Describing {
@@ -201,25 +229,46 @@ impl Dispatcher {
                             });
                         }
                         Quit => {
+                            // the handler has quit - also remove it from all active lists
                             self.handlers.remove(&hid);
                             for set in self.active.values_mut() {
                                 set.remove(&hid);
                             }
                         }
-                        _ => warn!("message should not arrive here: {}", req),
+                        _ => warn!("message should not arrive here: {}", req.1),
                     }
                 },
                 recv(self.replies) -> res => if let Ok((hid, rep)) = res {
                     debug!("got reply {:?} -> {}", hid, rep);
                     match hid {
-                        None => if let Update { module, .. } = &rep {
-                            if let Some(set) = self.active.get(module) {
-                                for hid in set {
-                                    self.send_back(*hid, &rep);
+                        None => match &rep {
+                            Update { module, .. } => {
+                                for &hid in &self.active[module] {
+                                    self.send_back(hid, &rep);
                                 }
                             }
+                            _ => ()
                         },
-                        Some(hid) => self.send_back(hid, &rep)
+                        Some(hid) => match rep {
+                            InitUpdates { module, updates } => {
+                                for msg in updates {
+                                    self.send_back(hid, &msg);
+                                }
+                                if !module.is_empty() {
+                                    self.send_back(hid, &Active { module: module.clone() });
+                                    self.active.get_mut(&module).expect("always there").insert(hid);
+                                } else {
+                                    global_activate_remaining -= 1;
+                                    if global_activate_remaining == 0 {
+                                        self.send_back(hid, &Active { module: "".into() });
+                                        for set in self.active.values_mut() {
+                                            set.insert(hid);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => self.send_back(hid, &rep)
+                        }
                     }
                 }
             }

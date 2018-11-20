@@ -201,13 +201,17 @@ impl CryoSimulator {
     }
 }
 
-#[derive(TypeDesc, PartialEq)]
+#[derive(TypeDesc, Clone, PartialEq)]
 enum Mode {
     PID,
     OpenLoop,
 }
 
-#[derive(TypeDesc)]
+impl Default for Mode {
+    fn default() -> Self { Mode::PID }
+}
+
+#[derive(TypeDesc, Clone, Default)]
 struct PID {
     #[datatype="DoubleFrom(0.0)"]
     p: f64,

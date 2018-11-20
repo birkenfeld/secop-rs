@@ -61,6 +61,7 @@ pub trait ModuleBase {
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
     fn read(&mut self, param: &str) -> Result<Value, Error>;
     fn describe(&self) -> Value;
+    fn get_init_updates(&mut self, pp: &mut Self::PollParams) -> Vec<Msg>;
 
     fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams);
     fn poll_busy(&mut self, n: usize, pp: &mut Self::PollParams);
@@ -102,6 +103,10 @@ pub trait ModuleBase {
                         Msg::Read { module, param } => match self.read(&param) {
                             Ok(value) => Msg::Update { module, param, value },
                             Err(e) => e.into_msg(req.0),
+                        },
+                        Msg::Activate { module } => {
+                            Msg::InitUpdates { module: module,
+                                               updates: self.get_init_updates(&mut poll_params) }
                         },
                         _ => {
                             warn!("message should not arrive here: {}", req);

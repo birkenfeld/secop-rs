@@ -22,7 +22,7 @@
 //
 //! Derive support for secop modules.
 
-#![recursion_limit="128"]
+#![recursion_limit="256"]
 
 mod module;
 mod typedesc;

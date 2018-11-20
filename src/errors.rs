@@ -68,6 +68,10 @@ impl Error {
         Self { kind: ErrorKind::BadValue, message: msg.into() }
     }
 
+    pub fn protocol(msg: impl Into<String>) -> Self {
+        Self { kind: ErrorKind::Protocol, message: msg.into() }
+    }
+
     pub fn no_module() -> Self {
         Self { kind: ErrorKind::NoSuchModule, message: "".into() }
     }

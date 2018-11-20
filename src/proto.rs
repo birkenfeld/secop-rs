@@ -28,7 +28,7 @@ use regex::Regex;
 use serde_json::Value;
 use lazy_static::lazy_static;
 
-use crate::errors::{Error, ErrorKind};
+use crate::errors::Error;
 
 
 lazy_static! {
@@ -47,8 +47,8 @@ lazy_static! {
 
 pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2";
 
-/// An algebraic data type that represents any message that can be sent
-/// over the network in the protocol.
+/// Enum that represents any message that can be sent over the network in the
+/// protocol, and some others that are only used internally.
 #[derive(Debug, Clone)]
 pub enum Msg {
     /// identify request
@@ -85,10 +85,16 @@ pub enum Msg {
     ErrMsg { class: String, report: Value },
     /// update event
     Update { module: String, param: String, value: Value },
+
+    /// not a protocol message, but a collection of initial updates
+    InitUpdates { module: String, updates: Vec<Msg> },
     /// not a protocol message, indicates the connection is done
     Quit,
 }
 
+/// An incoming message that carries around the originating line from the
+/// client.  We need this line for the error message if something goes wrong.
+#[derive(Clone)]
 pub struct IncomingMsg(pub String, pub Msg);
 
 use self::Msg::*;
@@ -126,7 +132,7 @@ impl Msg {
             let data = if let Some(jsonstr) = captures.get(3) {
                 match serde_json::from_str(jsonstr.as_str()) {
                     Ok(v) => v,
-                    Err(_) => return Err(Error::new(ErrorKind::Protocol, "invalid JSON").into_msg(msg))
+                    Err(_) => return Err(Error::protocol("invalid JSON").into_msg(msg))
                 }
             } else { Value::Null };
             let parsed = match msgtype {
@@ -146,14 +152,14 @@ impl Msg {
                 wire::INACTIVE =>   Inactive { module: spec1 },
                 wire::PONG =>       Pong { token: spec1, data },
                 wire::ERROR =>      ErrMsg { class: spec1, report: data },
-                _ => return Err(Error::new(ErrorKind::Protocol, "no such message type").into_msg(msg))
+                _ => return Err(Error::protocol("no such message type").into_msg(msg))
             };
             Ok(IncomingMsg(msg, parsed))
         } else if msg == IDENT_REPLY {
             // identify reply has a special format (to be compatible with SCPI)
             Ok(IncomingMsg(msg, IdnReply { encoded: IDENT_REPLY.into() }))
         } else {
-            Err(Error::new(ErrorKind::Protocol, "invalid message format").into_msg(msg))
+            Err(Error::protocol("invalid message format").into_msg(msg))
         }
     }
 }
@@ -201,6 +207,7 @@ impl fmt::Display for Msg {
                 else { write!(f, "{} {}", wire::PING, token) },
             ErrMsg { class, report } =>
                 write!(f, "{} {} {}", wire::ERROR, class, report),
+            InitUpdates { module, updates } => write!(f, "<updates>"),
             Quit => write!(f, "<eof>"),
         }
     }

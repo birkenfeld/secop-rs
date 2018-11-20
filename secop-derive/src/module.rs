@@ -98,6 +98,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut poll_struct = vec![];
     let mut poll_busy_params = vec![];
     let mut poll_other_params = vec![];
+    let mut init_updates = vec![];
 
     for p in params {
         // TODO: process default
@@ -122,11 +123,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         } else {
             quote! { #name => self.#write_method(#type_static.from_json(&value)?)? }
         });
+        let name_id = Ident::new(&name, Span::call_site());
+        poll_struct.push(quote! {
+            #name_id : <datatype_type!(#type_expr) as TypeDesc>::Repr,
+        });
         if polling != 0 {
-            let name_id = Ident::new(&name, Span::call_site());
-            poll_struct.push(quote! {
-                #name_id : <datatype_type!(#type_expr) as TypeDesc>::Repr,
-            });
             let polling_abs = polling.abs() as usize;
             // TODO error handling
             let poll_it = quote! {
@@ -150,6 +151,14 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 poll_other_params.push(poll_it);
             }
         }
+        init_updates.push(quote! {
+            // TODO: really ignore errors?
+            if let Ok(value) = #type_static.to_json(pp.#name_id.clone()) {
+                res.push(Msg::Update { module: self.name().to_string(),
+                                       param: #name.to_string(),
+                                       value: json!([value, {}]) }); // TODO timestamp
+            }
+        });
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
         let group_entry = if !group.is_empty() { quote! { "group": #group, } } else { quote! {} };
         descriptive.push(quote! {
@@ -250,6 +259,12 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                     #( #cmd_arms, )*
                     _ => Err(Error::no_command())
                 }
+            }
+
+            fn get_init_updates(&mut self, pp: &mut Self::PollParams) -> Vec<Msg> {
+                let mut res = Vec::new();
+                #( #init_updates )*
+                res
             }
 
             fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams) {
