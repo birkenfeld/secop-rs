@@ -22,7 +22,6 @@
 //
 //! Enumeration of possible SECoP errors.
 
-use std::borrow::Cow;
 use std::{error, fmt, result};
 use serde_json::json;
 
@@ -57,19 +56,15 @@ pub enum ErrorKind {
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
-    message: Cow<'static, str>,
+    message: String,
 }
 
 impl Error {
-    pub fn new(kind: ErrorKind, msg: &str) -> Self {
-        Self { kind, message: msg.to_string().into() }
-    }
-
-    pub fn new_owned(kind: ErrorKind, msg: String) -> Self {
+    pub fn new(kind: ErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
 
-    pub fn bad_value(msg: &'static str) -> Self {
+    pub fn bad_value(msg: impl Into<String>) -> Self {
         Self { kind: ErrorKind::BadValue, message: msg.into() }
     }
 
@@ -107,7 +102,6 @@ impl error::Error for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO
-        write!(f, "{}", error::Error::description(self))
+        write!(f, "{}: {}", error::Error::description(self), self.message)
     }
 }

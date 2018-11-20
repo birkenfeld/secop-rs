@@ -100,70 +100,63 @@ impl TypeDesc for DoubleFrom {
     type Repr = f64;
     fn type_json(&self) -> Value { json!(["double", self.0]) }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(json!(val))
+        if val >= self.0 {
+            Ok(json!(val))
+        } else {
+            Err(Error::bad_value(format!("expected double >= {}", self.0)))
+        }
     }
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        // TODO: check limits
-        val.as_f64().ok_or_else(|| Error::bad_value("expected double"))
+        match val.as_f64() {
+            Some(v) if v >= self.0 => Ok(v),
+            _ => Err(Error::bad_value(format!("expected double >= {}", self.0)))
+        }
     }
 }
 
 
-pub struct DoubleFromTo(pub f64, pub f64);
+pub struct DoubleRange(pub f64, pub f64);
 
-impl TypeDesc for DoubleFromTo {
+impl TypeDesc for DoubleRange {
     type Repr = f64;
     fn type_json(&self) -> Value { json!(["double", self.0, self.1]) }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(json!(val))
+        if val >= self.0 && val <= self.1 {
+            Ok(json!(val))
+        } else {
+            Err(Error::bad_value(format!("expected double between {} and {}",
+                                         self.0, self.1)))
+        }
     }
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        // TODO: check limits
-        val.as_f64().ok_or_else(|| Error::bad_value("expected double"))
+        match val.as_f64() {
+            Some(v) if v >= self.0 && v <= self.1 => Ok(v),
+            _ => Err(Error::bad_value(format!("expected double between {} and {}",
+                                              self.0, self.1)))
+        }
     }
 }
 
 
-pub struct Integer;
+pub struct Integer(pub i64, pub i64);
 
 impl TypeDesc for Integer {
     type Repr = i64;
-    fn type_json(&self) -> Value { json!(["int"]) }
-    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(json!(val))
-    }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        val.as_i64().ok_or_else(|| Error::bad_value("expected integer"))
-    }
-}
-
-
-pub struct IntegerFrom(pub i64);
-
-impl TypeDesc for IntegerFrom {
-    type Repr = i64;
-    fn type_json(&self) -> Value { json!(["int", self.0]) }
-    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(json!(val))
-    }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        // TODO: check limits
-        val.as_i64().ok_or_else(|| Error::bad_value("expected integer"))
-    }
-}
-
-
-pub struct IntegerFromTo(pub i64, pub i64);
-
-impl TypeDesc for IntegerFromTo {
-    type Repr = i64;
     fn type_json(&self) -> Value { json!(["int", self.0, self.1]) }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(json!(val))
+        if val >= self.0 && val <= self.1 {
+            Ok(json!(val))
+        } else {
+            Err(Error::bad_value(format!("expected integer between {} and {}",
+                                         self.0, self.1)))
+        }
     }
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        // TODO: check limits
-        val.as_i64().ok_or_else(|| Error::bad_value("expected integer"))
+        match val.as_i64() {
+            Some(v) if v >= self.0 && v <= self.1 => Ok(v),
+            _ => Err(Error::bad_value(format!("expected integer between {} and {}",
+                                              self.0, self.1)))
+        }
     }
 }
 
@@ -174,110 +167,69 @@ impl TypeDesc for Blob {
     type Repr = Vec<u8>;
     fn type_json(&self) -> Value { json!(["blob", self.0, self.1]) }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(Value::String(base64::encode(&val)))
+        if val.len() >= self.0 && val.len() <= self.1 {
+            Ok(Value::String(base64::encode(&val)))
+        } else {
+            Err(Error::bad_value(format!("expected blob with length between {} and {}",
+                                         self.0, self.1)))
+        }
     }
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        // TODO: check length limits
-        val.as_str().and_then(|s| base64::decode(s).ok())
-                    .ok_or_else(|| Error::bad_value("expected base64 coded string"))
+        if let Some(v) = val.as_str().and_then(|s| base64::decode(s).ok()) {
+            if v.len() >= self.0 && v.len() <= self.1 {
+                return Ok(v);
+            }
+        }
+        Err(Error::bad_value(format!("expected base64 coded string with decoded \
+                                      length between {} and {}", self.0, self.1)))
     }
 }
 
 
-pub struct String;
+pub struct String(pub usize);
 
 impl TypeDesc for String {
     type Repr = StdString;
-    fn type_json(&self) -> Value { json!(["string"]) }
-    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(Value::String(val))
-    }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        val.as_str().map(Into::into).ok_or_else(|| Error::bad_value("expected string"))
-    }
-}
-
-
-pub struct StringUpto(pub usize);
-
-impl TypeDesc for StringUpto {
-    type Repr = StdString;
     fn type_json(&self) -> Value { json!(["string", 0, self.0]) }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(Value::String(val))
-    }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        // TODO: check length limits
-        val.as_str().map(Into::into).ok_or_else(|| Error::bad_value("expected string"))
-    }
-}
-
-
-/// A generic enum.  On the Rust side, this is represented as an untyped i64.
-///
-/// You should prefer implementing your own enum class and deriving `TypeDesc`
-/// for it using secop-derive.
-pub struct Enum(pub HashMap<StdString, i64>);
-
-impl TypeDesc for Enum {
-    type Repr = i64;
-    fn type_json(&self) -> Value {
-        json!(["enum", self.0])
-    }
-    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        Ok(json!(val))
-    }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        if let Some(s) = val.as_str() {
-            self.0.get(s).cloned().ok_or_else(|| Error::bad_value("string not an enum member"))
-        } else if let Some(i) = val.as_i64() {
-            if self.0.values().any(|&j| i == j) { Ok(i) }
-            else { Err(Error::bad_value("integer not an enum member")) }
+        if val.len() <= self.0 {
+            Ok(Value::String(val))
         } else {
-            Err(Error::bad_value("expected string or integer"))
+            Err(Error::bad_value(format!("expected string with length <= {}", self.0)))
+        }
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
+        match val.as_str() {
+            Some(v) if v.len() <= self.0 => Ok(v.into()),
+            _ => Err(Error::bad_value(format!("expected string with length <= {}", self.0)))
         }
     }
 }
 
 
-pub struct ArrayOf<T: TypeDesc>(pub T);
+pub struct ArrayOf<T: TypeDesc>(pub T, pub usize, pub usize);
 
 impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
-    type Repr = Vec<T::Repr>;
-    fn type_json(&self) -> Value {
-        json!(["array", self.0.type_json()])
-    }
-    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        let v: Result<Vec<_>, _> = val.into_iter().map(|v| self.0.to_json(v)).collect();
-        Ok(Value::Array(v?))
-    }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        if let Some(arr) = val.as_array() {
-            arr.iter().map(|v| self.0.from_json(v)).collect()
-        } else {
-            Err(Error::bad_value("expected array"))
-        }
-    }
-}
-
-
-pub struct ArrayOfUpto<T: TypeDesc>(pub T, pub usize);
-
-impl<T: TypeDesc> TypeDesc for ArrayOfUpto<T> {
     type Repr = Vec<T::Repr>;
     fn type_json(&self) -> Value {
         json!(["array", self.0.type_json(), 0, self.1])
     }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        let v: Result<Vec<_>, _> = val.into_iter().map(|v| self.0.to_json(v)).collect();
-        Ok(Value::Array(v?))
+        if val.len() >= self.1 && val.len() <= self.2 {
+            let v: Result<Vec<_>, _> = val.into_iter().map(|v| self.0.to_json(v)).collect();
+            Ok(Value::Array(v?))
+        } else {
+            Err(Error::bad_value(format!("expected vector with length between {} and {}",
+                                         self.1, self.2)))
+        }
     }
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        // TODO: check length limits
-        if let Some(arr) = val.as_array() {
-            arr.iter().map(|v| self.0.from_json(v)).collect()
-        } else {
-            Err(Error::bad_value("expected array"))
+        match val.as_array() {
+            Some(arr) if arr.len() >= self.1 && arr.len() <= self.2 => {
+                arr.iter().map(|v| self.0.from_json(v)).collect()
+            }
+            _ => Err(Error::bad_value(format!("expected array with length between {} and {}",
+                                              self.1, self.2)))
         }
     }
 }
@@ -320,8 +272,38 @@ impl_tuple!(Tuple6 => T1, T2, T3, T4, T5, T6 : 6 : 0, 1, 2, 3, 4, 5);
 // is not actually validated/converted to.
 
 
-// Helpers for easy Enum creation
+/// A generic enum.  On the Rust side, this is represented as an untyped i64.
+///
+/// You should prefer implementing your own enum class and deriving `TypeDesc`
+/// for it using secop-derive.
+pub struct Enum(pub HashMap<StdString, i64>);
 
+impl TypeDesc for Enum {
+    type Repr = i64;
+    fn type_json(&self) -> Value {
+        json!(["enum", self.0])
+    }
+    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
+        if self.0.values().any(|&j| val == j) {
+            Ok(json!(val))
+        } else {
+            Err(Error::bad_value("integer not an enum member"))
+        }
+    }
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
+        if let Some(s) = val.as_str() {
+            self.0.get(s).cloned().ok_or_else(|| Error::bad_value("string not an enum member"))
+        } else if let Some(i) = val.as_i64() {
+            if self.0.values().any(|&j| i == j) { Ok(i) }
+            else { Err(Error::bad_value("integer not an enum member")) }
+        } else {
+            Err(Error::bad_value("expected string or integer"))
+        }
+    }
+}
+
+
+// Helpers for easy Enum creation
 impl Enum {
     pub fn new() -> Enum {
         Enum(HashMap::default())
@@ -365,7 +347,7 @@ impl Default for StatusConst {
 // there is *always* a constant with the same name as the type.
 pub type StatusType = Tuple2<StatusConstType, String>;
 #[allow(non_upper_case_globals)]
-pub const StatusType: StatusType = Tuple2(StatusConstType, String);
+pub const StatusType: StatusType = Tuple2(StatusConstType, String(1024));
 
 pub type Status = (StatusConst, StdString);
 
@@ -379,14 +361,12 @@ pub type Status = (StatusConst, StdString);
 // This provides a working but very brittle way of doing this, for now.
 macro_rules! datatype_type {
     (DoubleFrom($_:expr)) => (DoubleFrom);
-    (DoubleFromTo($_:expr, $__:expr)) => (DoubleFromTo);
-    (IntegerFrom($_:expr)) => (IntegerFrom);
-    (IntegerFromTo($_:expr)) => (IntegerFromTo);
+    (DoubleRange($_:expr, $__:expr)) => (DoubleRange);
+    (Integer($_:expr, $__:expr)) => (Integer);
     (Blob($_:expr)) => (Blob);
-    (StringUpto($_:expr)) => (StringUpto);
+    (String($_:expr)) => (String);
     (Enum $($_:tt)*) => (Enum);
-    (ArrayOf($($tp:tt)*)) => (ArrayOf<datatype_type!($($tp)*)>);
-    (ArrayOfUpto($($tp:tt)*, $($_:tt)*)) => (ArrayOfUpto<datatype_type!($($tp)*)>);
+    (ArrayOf($($tp:tt)*, $_:expr, $__:expr)) => (ArrayOf<datatype_type!($($tp)*)>);
     // For "simple" (unit-struct) types, which includes user-derived types.
     ($stalone_type:ty) => ($stalone_type);
 }

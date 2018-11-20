@@ -234,10 +234,10 @@ struct PID {
         datatype="DoubleFrom(0.0)",
         readonly=true, default="0.0", unit="K")]
 #[param(name="ramp", doc="setpoint ramping speed",
-        datatype="DoubleFromTo(0.0, 1e3)",
+        datatype="DoubleRange(0.0, 1e3)",
         readonly=false, default="1.0", unit="K/min")]
 #[param(name="heater", doc="current heater setting",
-        datatype="DoubleFromTo(0.0, 100.0)",
+        datatype="DoubleRange(0.0, 100.0)",
         readonly=true, default="0.0", unit="%")]
 #[param(name="pid", doc="regulation coefficients",
         datatype="PIDType", polling="0",
@@ -246,10 +246,10 @@ struct PID {
         datatype="DoubleFrom(0.0)", polling="-5",
         readonly=false, default="40.0", unit="%/K", group="pid")]
 #[param(name="i", doc="regulation coefficient I",
-        datatype="DoubleFromTo(0.0, 100.0)", polling="-5",
+        datatype="DoubleRange(0.0, 100.0)", polling="-5",
         readonly=false, default="10.0", group="pid")]
 #[param(name="d", doc="regulation coefficient D",
-        datatype="DoubleFromTo(0.0, 100.0)", polling="-5",
+        datatype="DoubleRange(0.0, 100.0)", polling="-5",
         readonly=false, default="2.0", group="pid")]
 #[param(name="mode", doc="regulation mode",
         datatype="ModeType", polling="0",
