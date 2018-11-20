@@ -67,6 +67,12 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut params = Vec::new();
     let mut commands = Vec::new();
 
+    let vis = &input.ast().vis;
+    let poll_struct_name = Ident::new(&format!("{}PollParams", input.ast().ident),
+                                      Span::call_site());
+
+    // TODO: check lowercase-uniqueness of params
+
     // parse parameter and command attributes on the main struct
     for attr in &input.ast().attrs {
         if attr.path.segments[0].ident == "param" {
@@ -86,9 +92,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut statics = vec![];
     let mut par_read_arms = vec![];
     let mut par_write_arms = vec![];
-    let mut poll_params = vec![];
     let mut cmd_arms = vec![];
     let mut descriptive = vec![];
+    let mut poll_struct = vec![];
+    let mut poll_busy_params = vec![];
+    let mut poll_other_params = vec![];
 
     for p in params {
         // TODO: process default
@@ -120,7 +128,32 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         });
         if polling != 0 {
-            poll_params.push(name.to_string());
+            let name_id = Ident::new(&name, Span::call_site());
+            poll_struct.push(quote! {
+                #name_id : <datatype_type!(#type_expr) as TypeDesc>::Repr,
+            });
+            let polling_abs = polling.abs() as usize;
+            // TODO error handling
+            let poll_it = quote! {
+                if n % #polling_abs == 0 {
+                    if let Ok(value) = self.#read_method() {
+                        if value != pp.#name_id {
+                            pp.#name_id = value.clone();
+                            if let Ok(val_json) = #type_static.to_json(value) {
+                                self.rep_sender().send((Option::None,
+                                                        Msg::Update { module: self.name().into(),
+                                                                      param: #name.into(),
+                                                                      value: val_json })).unwrap();
+                            }
+                        }
+                    }
+                }
+            };
+            if polling > 0 {
+                poll_busy_params.push(poll_it);
+            } else {
+                poll_other_params.push(poll_it);
+            }
         }
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
         let group_entry = if !group.is_empty() { quote! { "group": #group, } } else { quote! {} };
@@ -165,17 +198,24 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     }
 
     // generate the final code!
-
     let generated = input.gen_impl(quote! {
         use serde_json::{Value, json};
         use lazy_static::lazy_static;
         use crate::errors::{Error, ErrorKind, Result};
+        use crate::proto::Msg;
 
         lazy_static! {
             #( #statics )*
         }
 
+        #[derive(Default)]
+        #vis struct #poll_struct_name {
+            #( #poll_struct )*
+        }
+
         gen impl crate::module::ModuleBase for @Self {
+            type PollParams = #poll_struct_name;
+
             // XXX: this expects an "internals" member...
             fn internals(&self) -> &ModInternals { &self.internals }
 
@@ -193,15 +233,12 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 }])
             }
 
-            fn poll_params(&self) -> &'static [&'static str] {
-                &[ #(#poll_params),* ]
-            }
-
             fn change(&mut self, param: &str, value: Value) -> Result<Value> {
                 match param {
                     #( #par_write_arms, )*
                     _ => return Err(Error::new(ErrorKind::NoSuchParameter)) // TODO
                 }
+                // TODO: emit change message here
                 Ok(json!([value, {}]))
             }
 
@@ -217,6 +254,19 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 match cmd {
                     #( #cmd_arms, )*
                     _ => Err(Error::new(ErrorKind::NoSuchCommand)) // TODO
+                }
+            }
+
+            fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams) {
+                if pp.status.0 != StatusConst::Busy {
+                    #( #&poll_busy_params )*
+                }
+                #( #poll_other_params )*
+            }
+
+            fn poll_busy(&mut self, n: usize, pp: &mut Self::PollParams) {
+                if pp.status.0 == StatusConst::Busy {
+                    #( #&poll_busy_params )*
                 }
             }
         }

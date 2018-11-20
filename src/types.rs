@@ -338,7 +338,7 @@ impl Enum {
 
 // The Status enum, and predefined type.
 
-#[derive(TypeDesc)]
+#[derive(TypeDesc, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusConst {
     Idle = 100,
     Warn = 200,
@@ -346,6 +346,12 @@ pub enum StatusConst {
     Busy = 300,
     Error = 400,
     Unknown = 500,
+}
+
+impl Default for StatusConst {
+    fn default() -> Self {
+        StatusConst::Idle
+    }
 }
 
 // This could also be a new unit-struct type, but it works as a type

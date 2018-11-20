@@ -55,12 +55,15 @@ pub trait Module : ModuleBase {
 
 /// Part of the Module trait to be implemented by the derive macro.
 pub trait ModuleBase {
+    type PollParams: Default;
+
     fn change(&mut self, param: &str, value: Value) -> Result<Value, Error>;
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
     fn trigger(&mut self, param: &str) -> Result<Value, Error>;
     fn describe(&self) -> Value;
 
-    fn poll_params(&self) -> &'static [&'static str];
+    fn poll_normal(&mut self, n: usize, pp: &mut Self::PollParams);
+    fn poll_busy(&mut self, n: usize, pp: &mut Self::PollParams);
 
     #[inline]
     fn internals(&self) -> &ModInternals;
@@ -77,7 +80,12 @@ pub trait ModuleBase {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
         // TODO: customizable poll interval
-        let poll = tick(Duration::from_secs(1));
+        let poll = tick(Duration::from_millis(1000));
+        let poll_busy = tick(Duration::from_millis(200));
+
+        let mut poll_params = Self::PollParams::default();
+        let mut poll_normal_counter = 0usize;
+        let mut poll_busy_counter = 0usize;
 
         loop {
             select! {
@@ -112,15 +120,13 @@ pub trait ModuleBase {
                     self.rep_sender().send((Some(hid), rep)).unwrap();
                 },
                 recv(poll) -> _ => {
-                    for &param in self.poll_params() {
-                        // TODO remember previous values
-                        if let Ok(value) = self.trigger(param) {
-                            self.rep_sender().send((None, Msg::Update { module: self.name().into(),
-                                                                        param: param.into(),
-                                                                        value })).unwrap();
-                        }
-                    }
+                    self.poll_normal(poll_normal_counter, &mut poll_params);
+                    poll_normal_counter = poll_normal_counter.wrapping_add(1);
                 },
+                recv(poll_busy) -> _ => {
+                    self.poll_busy(poll_busy_counter, &mut poll_params);
+                    poll_busy_counter = poll_busy_counter.wrapping_add(1);
+                }
             }
         }
     }

@@ -50,5 +50,7 @@ pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
     obj.equipment_id = filename.as_ref()
                                .file_stem()
                                .map_or("unknown".into(), |s| s.to_string_lossy().into_owned());
+
+    // TODO: check lowercase-uniqueness of module names
     Ok(obj)
 }

@@ -157,6 +157,7 @@ impl Dispatcher {
                             }
                         }
                         EventEnableReq { module } => {
+                            // TODO: send out an update message for all params
                             if !module.is_empty() {
                                 self.active.entry(module.clone()).or_default().insert(hid);
                             } else {
