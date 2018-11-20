@@ -41,6 +41,7 @@ use crate::util::localtime;
 use crate::play;
 
 pub const RECVBUF_LEN: usize = 4096;
+pub const MAX_MSG_LEN: usize = 1024*1024;
 
 /// Handler ID.  This is nonzero so that Option<HId> is the same size.
 pub type HId = NonZeroU64;
@@ -281,18 +282,16 @@ impl Handler {
     }
 
     /// Process a single line (message).
-    fn process(&self, line: &str) -> bool {
+    fn process(&self, line: &str) {
         match Msg::parse(line) {
             Ok(msg) => {
                 debug!("processing {:?} => {:?}", line, msg);
                 self.handle_msg(msg);
-                true
             }
             Err(msg) => {
                 // error while parsing: msg will be an ErrorRep
                 warn!("failed to parse line: {:?} - {}", line, msg);
                 self.send_back(msg);
-                true
             }
         }
     }
@@ -302,11 +301,11 @@ impl Handler {
         let mut buf = Vec::with_capacity(RECVBUF_LEN);
         let mut recvbuf = [0u8; RECVBUF_LEN];
 
-        'outer: loop {
+        loop {
             // read a chunk of incoming data
             let got = match self.client.read(&mut recvbuf) {
                 Err(err) => {
-                    warn!("error in recv(): {}", err);
+                    warn!("error in recv, closing connection: {}", err);
                     break;
                 },
                 Ok(0)    => break,  // no data from blocking read...
@@ -320,13 +319,15 @@ impl Handler {
                 // note, this won't allocate a new String if valid UTF-8
                 let line_str = String::from_utf8_lossy(&buf[from..from+to]);
                 let line_str = line_str.trim_right_matches('\r');
-                if !self.process(line_str) {
-                    // false return value means "quit"
-                    break 'outer;
-                }
+                self.process(line_str);
                 from += to + 1;
             }
             buf.drain(..from);
+            // limit the incoming request length
+            if buf.len() > MAX_MSG_LEN {
+                warn!("hit request length limit, closing connection");
+                break;
+            }
         }
         self.req_sender.send((self.hid, Quit)).unwrap();
         info!("handler is finished");
