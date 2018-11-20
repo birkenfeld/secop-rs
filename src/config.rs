@@ -22,6 +22,7 @@
 //
 //! Configuration file handling.
 
+use std::collections::HashSet;
 use std::path::Path;
 use serde_derive::Deserialize;
 use toml;
@@ -51,6 +52,13 @@ pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
                                .file_stem()
                                .map_or("unknown".into(), |s| s.to_string_lossy().into_owned());
 
-    // TODO: check lowercase-uniqueness of module names
+    // TODO: check groups as well
+    let mut lc_names = HashSet::new();
+    for modcfg in &obj.modules {
+        if !lc_names.insert(modcfg.name.to_lowercase()) {
+            return Err(format!("module name {} is not unique", modcfg.name))
+        }
+    }
+
     Ok(obj)
 }
