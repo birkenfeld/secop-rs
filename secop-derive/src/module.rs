@@ -102,6 +102,9 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
     for p in params {
         // TODO: process default
+        // If default is present, set it in cache and write to device on startup.
+        // If default is not present, read from device on startup.
+
         let SecopParam { name, doc, readonly, datatype, unit, group, polling, .. } = p;
 
         if !lc_names.insert(name.to_lowercase()) {
@@ -112,37 +115,48 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
         let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
         let write_method = Ident::new(&format!("write_{}", name), Span::call_site());
-        statics.push(quote! {
-            static ref #type_static : datatype_type!(#type_expr) = #type_expr;
-        });
-        par_read_arms.push(quote! {
-            #name => #type_static.to_json(self.#read_method()?)?
-        });
-        par_write_arms.push(if p.readonly {
-            quote! { #name => return Err(Error::new(ErrorKind::ReadOnly, "")) }
-        } else {
-            quote! { #name => self.#write_method(#type_static.from_json(&value)?)? }
-        });
         let name_id = Ident::new(&name, Span::call_site());
         param_cache.push(quote! {
             #name_id : (<datatype_type!(#type_expr) as TypeDesc>::Repr, f64),
         });
+        statics.push(quote! {
+            static ref #type_static : datatype_type!(#type_expr) = #type_expr;
+        });
+        par_write_arms.push(if p.readonly { quote! {
+            #name => return Err(Error::new(ErrorKind::ReadOnly, ""))
+        } } else { quote! {
+            #name => {
+                let r_value = #type_static.from_json(&value)?;
+                let is_update = r_value != pcache.#name_id.0;
+                let r_value_c = r_value.clone();
+                self.#write_method(r_value)?;
+                let tstamp = localtime();
+                pcache.#name_id = (r_value_c, tstamp);
+                if is_update {
+                    self.send_update(#name, value.clone(), tstamp);
+                }
+                (value, tstamp)
+            }
+        } });
+        par_read_arms.push(quote! {
+            #name => {
+                let r_value = self.#read_method()?;
+                let is_update = r_value != pcache.#name_id.0;
+                let tstamp = localtime();
+                let r_value_c = r_value.clone();
+                let value = #type_static.to_json(r_value)?;
+                pcache.#name_id = (r_value_c, tstamp);
+                if is_update {
+                    self.send_update(#name, value.clone(), tstamp);
+                }
+                (value, tstamp)
+            }
+        });
         if polling != 0 {
             let polling_abs = polling.abs() as usize;
-            // TODO error handling
             let poll_it = quote! {
                 if n % #polling_abs == 0 {
-                    if let Ok(value) = self.#read_method() {
-                        if value != pcache.#name_id.0 {
-                            pcache.#name_id = (value.clone(), localtime());
-                            if let Ok(val_json) = #type_static.to_json(value) {
-                                self.rep_sender().send((Option::None,
-                                                        Msg::Update { module: self.name().into(),
-                                                                      param: #name.into(),
-                                                                      value: val_json })).unwrap();
-                            }
-                        }
-                    }
+                    let _ = self.read(#name, pcache);
                 }
             };
             if polling > 0 {
@@ -237,21 +251,20 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 }])
             }
 
-            fn change(&mut self, param: &str, value: Value) -> Result<Value> {
-                match param {
+            fn change(&mut self, param: &str, value: Value, pcache: &mut Self::ParamCache) -> Result<Value> {
+                let (value, tstamp) = match param {
                     #( #par_write_arms, )*
                     _ => return Err(Error::no_param())
-                }
-                // TODO: potentially emit change message here
-                Ok(json!([value, {"t": localtime()}]))
+                };
+                Ok(json!([value, {"t": tstamp}]))
             }
 
-            fn read(&mut self, param: &str) -> Result<Value> {
-                let value = match param {
+            fn read(&mut self, param: &str, pcache: &mut Self::ParamCache) -> Result<Value> {
+                let (value, tstamp) = match param {
                     #( #par_read_arms, )*
                     _ => return Err(Error::no_param())
                 };
-                Ok(json!([value, {"t": localtime()}]))
+                Ok(json!([value, {"t": tstamp}]))
             }
 
             fn command(&mut self, cmd: &str, arg: Value) -> Result<Value> {

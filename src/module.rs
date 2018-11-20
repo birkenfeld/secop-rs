@@ -24,7 +24,7 @@
 
 use std::time::Duration;
 use log::*;
-use serde_json::Value;
+use serde_json::{Value, json};
 use derive_new::new;
 use crossbeam_channel::{Sender, Receiver, tick, select};
 
@@ -57,10 +57,10 @@ pub trait Module : ModuleBase {
 pub trait ModuleBase {
     type ParamCache: Default;
 
-    fn change(&mut self, param: &str, value: Value) -> Result<Value, Error>;
-    fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
-    fn read(&mut self, param: &str) -> Result<Value, Error>;
     fn describe(&self) -> Value;
+    fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
+    fn read(&mut self, param: &str, pcache: &mut Self::ParamCache) -> Result<Value, Error>;
+    fn change(&mut self, param: &str, value: Value, pcache: &mut Self::ParamCache) -> Result<Value, Error>;
     fn get_init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg>;
 
     fn poll_normal(&mut self, n: usize, pcache: &mut Self::ParamCache);
@@ -77,6 +77,13 @@ pub trait ModuleBase {
     #[inline]
     fn rep_sender(&self) -> &Sender<(Option<HId>, Msg)> { &self.internals().rep_sender }
 
+    fn send_update(&self, param: &str, value: Value, tstamp: f64) {
+        self.rep_sender().send((None,
+                                Msg::Update { module: self.name().into(),
+                                              param: param.into(),
+                                              value: json!([value, {"t": tstamp}]) })).unwrap();
+    }
+
     fn run(mut self) where Self: Sized {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
@@ -92,16 +99,17 @@ pub trait ModuleBase {
             select! {
                 recv(self.req_receiver()) -> res => if let Ok((hid, req)) = res {
                     let rep = match req.1 {
-                        Msg::Change { module, param, value } => match self.change(&param, value) {
+                        Msg::Read { module, param } => match self.read(&param, &mut param_cache) {
+                            Ok(value) => Msg::Update { module, param, value },
+                            Err(e) => e.into_msg(req.0),
+                        },
+                        Msg::Change { module, param, value } => match self.change(&param, value,
+                                                                                  &mut param_cache) {
                             Ok(value) => Msg::Changed { module, param, value },
                             Err(e) => e.into_msg(req.0),
                         },
                         Msg::Do { module, command, arg } => match self.command(&command, arg) {
                             Ok(result) => Msg::Done { module, command, result },
-                            Err(e) => e.into_msg(req.0),
-                        },
-                        Msg::Read { module, param } => match self.read(&param) {
-                            Ok(value) => Msg::Update { module, param, value },
                             Err(e) => e.into_msg(req.0),
                         },
                         Msg::Activate { module } => {
