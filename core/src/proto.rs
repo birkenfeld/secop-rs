@@ -139,7 +139,8 @@ impl Msg {
             let mut param = || spec_split.next().ok_or(Error::protocol("missing parameter"));
 
             let data = if let Some(jsonstr) = captures.get(3) {
-                serde_json::from_str(jsonstr.as_str()).map_err(|_| Error::protocol("invalid JSON"))?
+                serde_json::from_str(jsonstr.as_str())
+                    .map_err(|_| Error::protocol("invalid JSON"))?
             } else {
                 Value::Null
             };

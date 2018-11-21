@@ -34,7 +34,7 @@ use crate::proto::{IncomingMsg, Msg};
 use crate::server::HId;
 
 /// Data that every module requires.
-#[derive(new)]
+#[derive(new, Clone)]
 pub struct ModInternals {
     name: String,
     config: ModuleConfig,
@@ -43,6 +43,9 @@ pub struct ModInternals {
 }
 
 impl ModInternals {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     pub fn class(&self) -> &str {
         &self.config.class
     }
@@ -88,6 +91,10 @@ pub trait ModuleBase {
 
     fn run(mut self) where Self: Sized {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
+
+        self.rep_sender().send((None,
+                                Msg::Describing { id: self.name().into(),
+                                                  structure: self.describe() })).unwrap();
 
         // TODO: customizable poll interval
         let poll = tick(Duration::from_millis(1000));

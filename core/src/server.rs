@@ -78,7 +78,7 @@ impl Server {
     /// Main server function; start threads to accept clients on the listening
     /// socket, the dispatcher, and the individual modules.
     pub fn start<F>(mut self, addr: &str, mod_runner: F) -> io::Result<()>
-        where F: Fn(ModInternals) -> Result<Value, Box<StdError>>
+        where F: Fn(ModInternals) -> Result<(), Box<StdError>>
     {
         // create a few channels we need for the dispatcher:
         // sending info about incoming connections to the dispatcher
@@ -91,7 +91,6 @@ impl Server {
         // create the modules
         let mut active_sets = HashMap::default();
         let mut mod_senders = HashMap::default();
-        let mut module_desc = Vec::new();
 
         for modcfg in self.config.modules.drain(..) {
             let name = modcfg.name.clone();
@@ -102,14 +101,14 @@ impl Server {
             let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender);
             active_sets.insert(name.clone(), HashSet::default());
             mod_senders.insert(name, mod_sender);
-            module_desc.push(mod_runner(int).expect("TODO handle me"));
+            mod_runner(int).expect("TODO handle me");
         }
 
         let descriptive = json!({
             "description": self.config.description,
             "equipment_id": self.config.equipment_id,
             "firmware": "secop-rs",
-            "modules": module_desc
+            "modules": {}
         });
 
         // create the dispatcher
@@ -242,14 +241,21 @@ impl Dispatcher {
                 recv(self.replies) -> res => if let Ok((hid, rep)) = res {
                     debug!("got reply {:?} -> {}", hid, rep);
                     match hid {
-                        None => match &rep {
-                            Update { module, .. } => {
+                        None => match rep {
+                            // update of descriptive data, isn't sent on to clients
+                            // but cached here
+                            Describing { id, structure } => {
+                                self.descriptive["modules"][id] = structure;
+                            }
+                            // event update from a module, check where to send it
+                            Update { ref module, .. } => {
                                 for &hid in &self.active[module] {
                                     self.send_back(hid, &rep);
                                 }
                             }
                             _ => ()
                         },
+                        // specific reply from a module
                         Some(hid) => match rep {
                             InitUpdates { module, updates } => {
                                 for msg in updates {

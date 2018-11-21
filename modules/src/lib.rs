@@ -27,23 +27,31 @@ extern crate secop_core;
 
 pub mod cryo;
 
+use std::panic::catch_unwind;
 use std::error::Error as StdError;
-use std::thread;
-use serde_json::Value;
+use std::thread::Builder;
+use log::*;
 
 use secop_core::module::{Module, ModInternals};
 
 
-fn inner_run<T: Module + Send + 'static>(internals: ModInternals) -> Value {
-    let module = T::create(internals);
-    let descriptive = module.describe();
-    // TODO: catch panics and restart
-    thread::spawn(|| module.run());
-    descriptive
+/// Inner (generic) implementation of `run_module`.
+fn inner_run<T: Module>(internals: ModInternals) {
+    let name = internals.name().to_owned();
+    Builder::new().name(name.clone()).spawn(move || {
+        loop {
+            let new_internals = internals.clone();
+            // TODO: set a panic hook to put panics into the logger
+            if catch_unwind(|| T::create(new_internals).run()).is_err() {
+                error!("module {} panicked; restarting...", name);
+            }
+        }
+    }).expect("could not start thread");
 }
 
 
-pub fn run_module(internals: ModInternals) -> Result<Value, Box<StdError>> {
+/// Start the module's own thread.
+pub fn run_module(internals: ModInternals) -> Result<(), Box<StdError>> {
     Ok(match &*internals.class() {
         "Cryo" => inner_run::<cryo::Cryo>(internals),
         // TODO: return a proper error

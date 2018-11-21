@@ -36,7 +36,7 @@ pub struct ServerConfig {
     pub modules: Vec<ModuleConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ModuleConfig {
     pub name: String,
     pub class: String,
