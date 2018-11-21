@@ -287,12 +287,17 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         });
         // TODO: catch and log errors
         cmd_arms.push(quote! {
-            #name => #restype_static.to_json(self.#do_method(#argtype_static.from_json(&arg)?)?)
+            #name => {
+                let result_r = self.#do_method(#argtype_static.from_json(&arg)?)?;
+                let result = #restype_static.to_json(result_r)?;
+                Ok(json!([result, {"t": localtime()}]))
+            }
         });
         descriptive.push(quote! {
             json!([#name, {
                 "description": #doc,
-                "datatype": ["command", #argtype_static.type_json(), #restype_static.type_json()],
+                "datatype": ["command", #argtype_static.type_json(),
+                             #restype_static.type_json()],
             }]),
         });
     }

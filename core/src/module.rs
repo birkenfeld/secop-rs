@@ -113,7 +113,7 @@ pub trait ModuleBase {
                             Err(e) => e.into_msg(req.0),
                         },
                         Msg::Do { module, command, arg } => match self.command(&command, arg) {
-                            Ok(result) => Msg::Done { module, command, result },
+                            Ok(data) => Msg::Done { module, command, data },
                             Err(e) => e.into_msg(req.0),
                         },
                         Msg::Activate { module } => {

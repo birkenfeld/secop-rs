@@ -70,7 +70,7 @@ pub enum Msg {
     /// command execution request
     Do { module: String, command: String, arg: Value },
     /// command result
-    Done { module: String, command: String, result: Value },
+    Done { module: String, command: String, data: Value },
     /// change request
     Change { module: String, param: String, value: Value },
     /// change result
@@ -155,7 +155,7 @@ impl Msg {
                 wire::IDN =>        Idn,
                 wire::UPDATE =>     Update { module, param: param()?, data },
                 wire::CHANGED =>    Changed { module, param: param()?, data },
-                wire::DONE =>       Done { module, command: param()?, result: data },
+                wire::DONE =>       Done { module, command: param()?, data },
                 wire::DESCRIBING => Describing { id: specifier.into(), structure: data },
                 wire::ACTIVE =>     Active { module },
                 wire::INACTIVE =>   Inactive { module },
@@ -185,8 +185,8 @@ impl fmt::Display for Msg {
                 write!(f, "{} {}:{} {}", wire::UPDATE, module, param, data),
             Changed { module, param, data } =>
                 write!(f, "{} {}:{} {}", wire::CHANGED, module, param, data),
-            Done { module, command, result } =>
-                write!(f, "{} {}:{} {}", wire::DONE, module, command, result),
+            Done { module, command, data } =>
+                write!(f, "{} {}:{} {}", wire::DONE, module, command, data),
             Describing { id, structure } =>
                 write!(f, "{} {} {}", wire::DESCRIBING, id, structure),
             Active { module } =>
