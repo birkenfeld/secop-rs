@@ -225,7 +225,7 @@ impl Dispatcher {
                         Describe => {
                             self.send_back(hid, &Describing {
                                 id: ".".into(),
-                                desc: self.descriptive.clone()
+                                structure: self.descriptive.clone()
                             });
                         }
                         Quit => {

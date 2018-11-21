@@ -58,7 +58,7 @@ pub enum Msg {
     /// description request
     Describe,
     /// description reply
-    Describing { id: String, desc: Value },
+    Describing { id: String, structure: Value },
     /// event enable request
     Activate { module: String },
     /// event enable reply
@@ -74,7 +74,7 @@ pub enum Msg {
     /// change request
     Change { module: String, param: String, value: Value },
     /// change result
-    Changed { module: String, param: String, value: Value },
+    Changed { module: String, param: String, data: Value },
     /// read request
     Read { module: String, param: String },
     /// heartbeat request
@@ -84,7 +84,7 @@ pub enum Msg {
     /// error reply
     ErrMsg { class: String, report: Value },
     /// update event
-    Update { module: String, param: String, value: Value },
+    Update { module: String, param: String, data: Value },
 
     /// not a protocol message, but a collection of initial updates
     InitUpdates { module: String, updates: Vec<Msg> },
@@ -123,43 +123,53 @@ impl Msg {
     ///
     /// This matches a regular expression, and then creates a `Msg` if successful.
     pub fn parse(msg: String) -> Result<IncomingMsg, Msg> {
-        if let Some(captures) = MSG_RE.captures(&msg) {
-            let msgtype = captures.get(1).expect("is required").as_str();
-            let mut split = captures.get(2).map(|m| m.as_str())
-                                           .unwrap_or("").splitn(2, ':').map(Into::into);
-            let spec1 = split.next().expect("cannot be absent");
-            let spec2 = split.next();
+        match Self::parse_inner(&msg) {
+            Ok(v) => Ok(IncomingMsg(msg, v)),
+            Err(e) => Err(e.into_msg(msg)),
+        }
+    }
+
+    fn parse_inner(msg: &str) -> Result<Msg, Error> {
+        if let Some(captures) = MSG_RE.captures(msg) {
+            let action = captures.get(1).expect("is required").as_str();
+
+            let specifier = captures.get(2).map(|m| m.as_str()).unwrap_or("");
+            let mut spec_split = specifier.splitn(2, ':').map(Into::into);
+            let module = spec_split.next().expect("cannot be absent");
+            let mut param = || spec_split.next().ok_or(Error::protocol("missing parameter"));
+
             let data = if let Some(jsonstr) = captures.get(3) {
-                match serde_json::from_str(jsonstr.as_str()) {
-                    Ok(v) => v,
-                    Err(_) => return Err(Error::protocol("invalid JSON").into_msg(msg))
-                }
-            } else { Value::Null };
-            let parsed = match msgtype {
-                wire::READ =>       Read { module: spec1, param: spec2.expect("XXX") },
-                wire::CHANGE =>     Change { module: spec1, param: spec2.expect("XXX"), value: data },
-                wire::DO =>         Do { module: spec1, command: spec2.expect("XXX"), arg: data },
-                wire::DESCRIBE =>   Describe,
-                wire::ACTIVATE =>   Activate { module: spec1 },
-                wire::DEACTIVATE => Deactivate { module: spec1 },
-                wire::PING =>       Ping { token: spec1 },
-                wire::IDN =>        Idn,
-                wire::UPDATE =>     Update { module: spec1, param: spec2.expect("XXX"), value: data },
-                wire::CHANGED =>    Changed { module: spec1, param: spec2.expect("XXX"), value: data },
-                wire::DONE =>       Done { module: spec1, command: spec2.expect("XXX"), result: data },
-                wire::DESCRIBING => Describing { id: spec1, desc: data },
-                wire::ACTIVE =>     Active { module: spec1 },
-                wire::INACTIVE =>   Inactive { module: spec1 },
-                wire::PONG =>       Pong { token: spec1, data },
-                wire::ERROR =>      ErrMsg { class: spec1, report: data },
-                _ => return Err(Error::protocol("no such message type").into_msg(msg))
+                serde_json::from_str(jsonstr.as_str()).map_err(|_| Error::protocol("invalid JSON"))?
+            } else {
+                Value::Null
             };
-            Ok(IncomingMsg(msg, parsed))
+
+            let parsed = match action {
+                wire::READ =>       Read { module, param: param()? },
+                wire::CHANGE =>     Change { module, param: param()?, value: data },
+                wire::DO =>         Do { module, command: param()?, arg: data },
+                wire::DESCRIBE =>   Describe,
+                wire::ACTIVATE =>   Activate { module },
+                wire::DEACTIVATE => Deactivate { module },
+                wire::PING =>       Ping { token: specifier.into() },
+                wire::IDN =>        Idn,
+                wire::UPDATE =>     Update { module, param: param()?, data },
+                wire::CHANGED =>    Changed { module, param: param()?, data },
+                wire::DONE =>       Done { module, command: param()?, result: data },
+                wire::DESCRIBING => Describing { id: specifier.into(), structure: data },
+                wire::ACTIVE =>     Active { module },
+                wire::INACTIVE =>   Inactive { module },
+                wire::PONG =>       Pong { token: specifier.into(), data },
+                wire::ERROR =>      ErrMsg { class: specifier.into(), report: data },
+                _ => return Err(Error::protocol("no such message type"))
+            };
+
+            Ok(parsed)
         } else if msg == IDENT_REPLY {
             // identify reply has a special format (to be compatible with SCPI)
-            Ok(IncomingMsg(msg, IdnReply { encoded: IDENT_REPLY.into() }))
+            Ok(IdnReply { encoded: IDENT_REPLY.into() })
         } else {
-            Err(Error::protocol("invalid message format").into_msg(msg))
+            Err(Error::protocol("invalid message format"))
         }
     }
 }
@@ -171,14 +181,14 @@ impl Msg {
 impl fmt::Display for Msg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Update { module, param, value } =>
-                write!(f, "{} {}:{} {}", wire::UPDATE, module, param, value),
-            Changed { module, param, value } =>
-                write!(f, "{} {}:{} {}", wire::CHANGED, module, param, value),
+            Update { module, param, data } =>
+                write!(f, "{} {}:{} {}", wire::UPDATE, module, param, data),
+            Changed { module, param, data } =>
+                write!(f, "{} {}:{} {}", wire::CHANGED, module, param, data),
             Done { module, command, result } =>
                 write!(f, "{} {}:{} {}", wire::DONE, module, command, result),
-            Describing { id, desc } =>
-                write!(f, "{} {} {}", wire::DESCRIBING, id, desc),
+            Describing { id, structure } =>
+                write!(f, "{} {} {}", wire::DESCRIBING, id, structure),
             Active { module } =>
                 if module.is_empty() { f.write_str(wire::ACTIVE) }
                 else { write!(f, "{} {}", wire::ACTIVE, module) },

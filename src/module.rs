@@ -61,7 +61,9 @@ pub trait ModuleBase {
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
     fn read(&mut self, param: &str, pcache: &mut Self::ParamCache) -> Result<Value, Error>;
     fn change(&mut self, param: &str, value: Value, pcache: &mut Self::ParamCache) -> Result<Value, Error>;
-    fn get_init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg>;
+    fn init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg>;
+    // TODO: is a result necessary?
+    fn init_params(&mut self, pcache: &mut Self::ParamCache) -> Result<(), Error>;
 
     fn poll_normal(&mut self, n: usize, pcache: &mut Self::ParamCache);
     fn poll_busy(&mut self, n: usize, pcache: &mut Self::ParamCache);
@@ -81,7 +83,7 @@ pub trait ModuleBase {
         self.rep_sender().send((None,
                                 Msg::Update { module: self.name().into(),
                                               param: param.into(),
-                                              value: json!([value, {"t": tstamp}]) })).unwrap();
+                                              data: json!([value, {"t": tstamp}]) })).unwrap();
     }
 
     fn run(mut self) where Self: Sized {
@@ -95,17 +97,19 @@ pub trait ModuleBase {
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;
 
+        self.init_updates(&mut param_cache);
+
         loop {
             select! {
                 recv(self.req_receiver()) -> res => if let Ok((hid, req)) = res {
                     let rep = match req.1 {
                         Msg::Read { module, param } => match self.read(&param, &mut param_cache) {
-                            Ok(value) => Msg::Update { module, param, value },
+                            Ok(data) => Msg::Update { module, param, data },
                             Err(e) => e.into_msg(req.0),
                         },
                         Msg::Change { module, param, value } => match self.change(&param, value,
                                                                                   &mut param_cache) {
-                            Ok(value) => Msg::Changed { module, param, value },
+                            Ok(data) => Msg::Changed { module, param, data },
                             Err(e) => e.into_msg(req.0),
                         },
                         Msg::Do { module, command, arg } => match self.command(&command, arg) {
@@ -114,7 +118,7 @@ pub trait ModuleBase {
                         },
                         Msg::Activate { module } => {
                             Msg::InitUpdates { module: module,
-                                               updates: self.get_init_updates(&mut param_cache) }
+                                               updates: self.init_updates(&mut param_cache) }
                         },
                         _ => {
                             warn!("message should not arrive here: {}", req);

@@ -170,7 +170,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             if let Ok(value) = #type_static.to_json(pcache.#name_id.0.clone()) {
                 res.push(Msg::Update { module: self.name().to_string(),
                                        param: #name.to_string(),
-                                       value: json!([value, {"t": pcache.#name_id.1}]) });
+                                       data: json!([value, {"t": pcache.#name_id.1}]) });
             }
         });
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
@@ -274,10 +274,14 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 }
             }
 
-            fn get_init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg> {
+            fn init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg> {
                 let mut res = Vec::new();
                 #( #init_updates )*
                 res
+            }
+
+            fn init_params(&mut self, pcache: &mut Self::ParamCache) -> Result<()> {
+                Ok(())
             }
 
             fn poll_normal(&mut self, n: usize, pcache: &mut Self::ParamCache) {
