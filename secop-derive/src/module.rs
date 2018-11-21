@@ -20,7 +20,56 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! Derive a SECoP Module implementation for individual modules.
+//! Derive a SECoP ModuleBase implementation for individual modules.
+//!
+//! Provides an implementation of the `ModuleBase` trait for a given struct,
+//! which contains the custom data required for a module's hardware-facing
+//! implementation.
+//!
+//! Additionally, the struct must have a member called `internals` of type
+//! `ModInternals`, which represents the basic data and communication interfaces
+//! that this framework requires for each module.
+//!
+//! Parameters and commands are added to the module interface using attributes.
+//! For example:
+//!
+//! ```
+//! #[derive(ModuleBase)]
+//! #[param(name="status", datatype="StatusType", readonly=True)]
+//! #[param(name="value", datatype="Double", readonly=True)]
+//! #[param(name="target", datatype="Double")]
+//! #[param(name="speed", datatype="DoubleFrom(0.0)", default="1.0")]
+//! #[command(name="stop", argtype="None", restype="None")]
+//! struct Motor {
+//!     // required by the framework
+//!     internals: ModInternals,
+//!     // module specific, to talk to the controller
+//!     connection: SerialPort,
+//! }
+//! ```
+//!
+//! You must afterwards also implement the `Module` trait, which contains all
+//! APIs that cannot be derived automatically, and inherent methods that
+//! implement the actual reading, writing, and execution.  These have very
+//! simple signatures since all data is in terms of Rust types, and has been
+//! validated against the SECoP type specification.  For the above example:
+//!
+//! ```
+//! impl Module for Motor {
+//!     fn create(internals: ModInternals) -> Self {
+//!         // create the serial port, using internals.config to access the
+//!         // user configuration of the module
+//!         let connection = ...;
+//!         Motor { internals, connection }
+//!     }
+//! }
+//!
+//! impl Motor {
+//!     fn read_value(&mut self) -> Result<f64> { ... }
+//!     fn write_target(&mut self, tgt: f64) -> Result<()> { ... }
+//!     fn do_stop(&mut self, arg: ()) -> Result<()> { ... }
+//! }
+//! ```
 
 use std::collections::HashSet;
 use syn::{Expr, Ident, spanned::Spanned};
@@ -28,7 +77,6 @@ use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use darling::FromMeta;
 
-fn default_polling() -> i64 { 1 }
 
 /// Representation of the #[param(...)] attribute.
 #[derive(FromMeta, Debug)]
@@ -46,6 +94,9 @@ struct SecopParam {
     #[darling(default = "default_polling")]
     polling: i64,
 }
+
+// The default is to poll a parameter in every cycle.
+fn default_polling() -> i64 { 1 }
 
 /// Representation of the #[command(...)] attribute.
 #[derive(FromMeta, Debug)]
@@ -86,6 +137,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         }
     }
+
+    // TODO: check that the members include "internals".
 
     let mut lc_names = HashSet::new();
 

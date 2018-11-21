@@ -68,6 +68,11 @@ impl Error {
         Self { kind: ErrorKind::BadValue, message: msg.into() }
     }
 
+    pub fn amend(mut self, msg: &str) -> Self {
+        self.message = format!("{} ({})", self.message, msg);
+        self
+    }
+
     pub fn protocol(msg: impl Into<String>) -> Self {
         Self { kind: ErrorKind::Protocol, message: msg.into() }
     }

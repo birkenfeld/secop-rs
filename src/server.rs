@@ -285,8 +285,6 @@ pub struct Handler {
     client: TcpStream,
     /// Assigned handler ID.
     hid: HId,
-    /// Address of the remote peer socket.
-    // addr: SocketAddr,
     /// Sender for incoming requests, to the dispatcher.
     req_sender: Sender<(HId, IncomingMsg)>,
     /// Sender for outgoing replies, to the sender thread.

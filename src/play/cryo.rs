@@ -280,23 +280,23 @@ impl Module for Cryo {
 }
 
 impl Cryo {
-    fn read_value(&self)    -> Result<f64> { Ok(self.vars.lock().regulation) }
-    fn read_sample(&self)   -> Result<f64> { Ok(self.vars.lock().sample) }
-    fn read_target(&self)   -> Result<f64> { Ok(self.vars.lock().target) }
-    fn read_setpoint(&self) -> Result<f64> { Ok(self.vars.lock().setpoint) }
-    fn read_ramp(&self)     -> Result<f64> { Ok(self.vars.lock().ramp) }
-    fn read_heater(&self)   -> Result<f64> { Ok(self.vars.lock().heater) }
-    fn read_p(&self)        -> Result<f64> { Ok(self.vars.lock().k_p) }
-    fn read_i(&self)        -> Result<f64> { Ok(self.vars.lock().k_i) }
-    fn read_d(&self)        -> Result<f64> { Ok(self.vars.lock().k_d) }
-    fn read_pid(&self)      -> Result<PID> {
+    fn read_value(&mut self)    -> Result<f64> { Ok(self.vars.lock().regulation) }
+    fn read_sample(&mut self)   -> Result<f64> { Ok(self.vars.lock().sample) }
+    fn read_target(&mut self)   -> Result<f64> { Ok(self.vars.lock().target) }
+    fn read_setpoint(&mut self) -> Result<f64> { Ok(self.vars.lock().setpoint) }
+    fn read_ramp(&mut self)     -> Result<f64> { Ok(self.vars.lock().ramp) }
+    fn read_heater(&mut self)   -> Result<f64> { Ok(self.vars.lock().heater) }
+    fn read_p(&mut self)        -> Result<f64> { Ok(self.vars.lock().k_p) }
+    fn read_i(&mut self)        -> Result<f64> { Ok(self.vars.lock().k_i) }
+    fn read_d(&mut self)        -> Result<f64> { Ok(self.vars.lock().k_d) }
+    fn read_pid(&mut self)      -> Result<PID> {
         let v = self.vars.lock();
         Ok(PID { p: v.k_p, i: v.k_i, d: v.k_d })
     }
-    fn read_mode(&self)     -> Result<Mode> {
+    fn read_mode(&mut self)     -> Result<Mode> {
         Ok(if self.vars.lock().control { Mode::PID } else { Mode::OpenLoop })
     }
-    fn read_status(&self)   -> Result<Status> {
+    fn read_status(&mut self)   -> Result<Status> {
         Ok(if self.vars.lock().ramping {
             (StatusConst::Busy, "ramping".into())
         } else {

@@ -20,7 +20,21 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! Derive support for secop modules.
+//! # Derive support for secop modules
+//!
+//! There are two auto-derive traits implemented here:
+//!
+//! * `ModuleBase` is a complete implementation of the guts of a module.  It
+//!   provides an easy DSL to add parameters and commands, and translates that
+//!   into the respective case handling in the methods that implement the
+//!   basic SECoP actions like `change` and `do`.
+//!
+//!   It also provides automatic translation and verification between JSON
+//!   payloads and Rust data for parameter and argument types.
+//!
+//! * `TypeDesc` can be derived for enums and structs, and provides a type-
+//!   safe way to declare parameters and commands with enum and struct
+//!   datatypes.
 
 #![recursion_limit="256"]
 

@@ -216,7 +216,9 @@ impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
     }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val.len() >= self.1 && val.len() <= self.2 {
-            let v: Result<Vec<_>, _> = val.into_iter().map(|v| self.0.to_json(v)).collect();
+            let v: Result<Vec<_>, _> = val.into_iter().enumerate().map(|(i, v)| {
+                self.0.to_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
+            }).collect();
             Ok(Value::Array(v?))
         } else {
             Err(Error::bad_value(format!("expected vector with length between {} and {}",
@@ -226,7 +228,9 @@ impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         match val.as_array() {
             Some(arr) if arr.len() >= self.1 && arr.len() <= self.2 => {
-                arr.iter().map(|v| self.0.from_json(v)).collect()
+                arr.iter().enumerate().map(|(i, v)| {
+                    self.0.from_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
+                }).collect()
             }
             _ => Err(Error::bad_value(format!("expected array with length between {} and {}",
                                               self.1, self.2)))
@@ -245,13 +249,19 @@ macro_rules! impl_tuple {
                 json!(["tuple", $(self.$idx.type_json()),*])
             }
             fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-                Ok(json!([ $(self.$idx.to_json(val.$idx)?),* ]))
+                Ok(json!([ $(
+                    self.$idx.to_json(val.$idx)
+                             .map_err(|e| e.amend(concat!("in item ", $idx))) ?
+                ),* ]))
             }
             fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
                 if let Some(arr) = val.as_array() {
                     if arr.len() == $len {
                         return Ok((
-                            $(self.$idx.from_json(&arr[$idx])?),*
+                            $(
+                                self.$idx.from_json(&arr[$idx])
+                                         .map_err(|e| e.amend(concat!("in item ", $idx))) ?
+                            ),*
                         ));
                     }
                 }
@@ -303,24 +313,6 @@ impl TypeDesc for Enum {
 }
 
 
-// Helpers for easy Enum creation
-impl Enum {
-    pub fn new() -> Enum {
-        Enum(HashMap::default())
-    }
-
-    pub fn add(mut self, name: &str) -> Self {
-        let n = self.0.len() as i64;
-        self.0.insert(name.into(), n);
-        self
-    }
-
-    pub fn insert(mut self, name: &str, value: i64) -> Self {
-        self.0.insert(name.into(), value);
-        self
-    }
-}
-
 // The Status enum, and predefined type.
 
 #[derive(TypeDesc, Clone, Copy, PartialEq, Eq, Hash)]
@@ -365,7 +357,7 @@ macro_rules! datatype_type {
     (Integer($_:expr, $__:expr)) => (Integer);
     (Blob($_:expr)) => (Blob);
     (String($_:expr)) => (String);
-    (Enum $($_:tt)*) => (Enum);
+    (Enum($_:expr)) => (Enum);
     (ArrayOf($($tp:tt)*, $_:expr, $__:expr)) => (ArrayOf<datatype_type!($($tp)*)>);
     // For "simple" (unit-struct) types, which includes user-derived types.
     ($stalone_type:ty) => ($stalone_type);
