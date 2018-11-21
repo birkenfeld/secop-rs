@@ -262,7 +262,7 @@ struct PID {
           argtype="None", restype="None")]
 pub struct Cryo {
     internals: ModInternals,
-    pcache: CryoParamCache,
+    cache: CryoParamCache,
     vars: Arc<Mutex<StateVars>>,
 }
 
@@ -274,9 +274,9 @@ impl Module for Cryo {
                                target: 0.0, setpoint: 0.0 };
         let vars = Arc::new(Mutex::new(vars));
         let sim = CryoSimulator { vars: Arc::clone(&vars) };
-        let pcache = CryoParamCache::default();
+        let cache = CryoParamCache::default();
         thread::spawn(move || sim.run());
-        Cryo { internals, pcache, vars }
+        Cryo { internals, cache, vars }
     }
 
 }

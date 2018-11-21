@@ -26,12 +26,14 @@ use std::time::Duration;
 use log::*;
 use serde_json::{Value, json};
 use derive_new::new;
+use mlzutil::time::localtime;
 use crossbeam_channel::{Sender, Receiver, tick, select};
 
 use crate::config::ModuleConfig;
 use crate::errors::Error;
 use crate::proto::{IncomingMsg, Msg};
 use crate::server::HId;
+use crate::types::TypeDesc;
 
 /// Data that every module requires.
 #[derive(new, Clone)]
@@ -51,24 +53,71 @@ impl ModInternals {
     }
 }
 
+/// Cache for a single parameter value.
+#[derive(Default)]
+pub struct CachedParam<T> {
+    data: T,
+    time: f64,
+}
+
+impl<T: PartialEq + Clone> CachedParam<T> {
+    pub fn new(value: T) -> Self {
+        Self { data: value, time: localtime() }
+    }
+
+    /// Gets a newly determined value for this parameter, which is then cached,
+    /// possibly an update message is sent, and the value is returned JSONified
+    /// for sending in a reply.
+    pub fn update<TD: TypeDesc<Repr=T>>(&mut self, value: T, td: &TD) -> Result<(Value, f64, bool), Error> {
+        self.time = localtime();
+        let is_update = if value != self.data {
+            self.data = value.clone();
+            true
+        } else {
+            false
+        };
+        Ok((td.to_json(value)?, self.time, is_update))
+    }
+
+    pub fn as_ref(&self) -> &T {
+        &self.data
+    }
+
+    pub fn data(&self) -> T {
+        self.data.clone()
+    }
+
+    pub fn time(&self) -> f64 {
+        self.time
+    }
+}
+
 /// Part of the Module trait to be implemented by user.
 pub trait Module : ModuleBase {
     fn create(internals: ModInternals) -> Self where Self: Sized;
 }
 
-/// Part of the Module trait to be implemented by the derive macro.
+/// Part of the Module trait that is implemented by the derive macro.
 pub trait ModuleBase {
-    type ParamCache: Default;
-
+    /// Return the descriptive data for this module (a JSON object).
     fn describe(&self) -> Value;
+    /// Execute a command.
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
+    /// Read a parameter and possibly emit an update message.
     fn read(&mut self, param: &str) -> Result<Value, Error>;
+    /// Change a parameter and possibly emit an update message.
     fn change(&mut self, param: &str, value: Value) -> Result<Value, Error>;
-    fn init_updates(&mut self) -> Vec<Msg>;
     // TODO: is a result necessary?
+    /// Initialize cached values for all parameters.
     fn init_params(&mut self) -> Result<(), Error>;
+    /// Get a list of updates for all parameters, which must be sent upon
+    /// activation of the module.
+    fn activate_updates(&mut self) -> Vec<Msg>;
 
+    /// Poll parameters.  If device is busy, parameters that participate in
+    /// busy-poll are not polled.
     fn poll_normal(&mut self, n: usize);
+    /// Poll parameters that participate in busy-poll if device status is busy.
     fn poll_busy(&mut self, n: usize);
 
     #[inline]
@@ -77,27 +126,31 @@ pub trait ModuleBase {
     fn name(&self) -> &str { &self.internals().name }
     #[inline]
     fn config(&self) -> &ModuleConfig { &self.internals().config }
-    #[inline]
-    fn req_receiver(&self) -> &Receiver<(HId, IncomingMsg)> { &self.internals().req_receiver }
-    #[inline]
-    fn rep_sender(&self) -> &Sender<(Option<HId>, Msg)> { &self.internals().rep_sender }
 
+    /// Send a general update message back to the dispatcher, which decides if
+    /// and where to send it on.
     fn send_update(&self, param: &str, value: Value, tstamp: f64) {
-        self.rep_sender().send((None,
-                                Msg::Update { module: self.name().into(),
-                                              param: param.into(),
-                                              data: json!([value, {"t": tstamp}]) })).unwrap();
+        self.internals().rep_sender.send(
+            (None, Msg::Update { module: self.name().into(),
+                                 param: param.into(),
+                                 data: json!([value, {"t": tstamp}]) })).unwrap();
     }
 
+    /// Runs the main loop for the module, which does the following:
+    ///
+    /// * Initialize the module parameters
+    /// * Handle incoming requests
+    /// * Poll parameters periodically
     fn run(mut self) where Self: Sized {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
-        self.rep_sender().send((None,
-                                Msg::Describing { id: self.name().into(),
-                                                  structure: self.describe() })).unwrap();
+        self.internals().rep_sender.send(
+            (None, Msg::Describing { id: self.name().into(),
+                                     structure: self.describe() })).unwrap();
 
         if let Err(e) = self.init_params() {
             warn!("error initializing params: {}", e);
+            // TODO: and now?
         }
 
         // TODO: customizable poll interval
@@ -109,7 +162,9 @@ pub trait ModuleBase {
 
         loop {
             select! {
-                recv(self.req_receiver()) -> res => if let Ok((hid, req)) = res {
+                recv(self.internals().req_receiver) -> res => if let Ok((hid, req)) = res {
+                    // These are the only messages that are handled here.  They all
+                    // generate a reply, which is sent back to the dispatcher.
                     let rep = match req.1 {
                         Msg::Read { module, param } => match self.read(&param) {
                             Ok(data) => Msg::Update { module, param, data },
@@ -125,14 +180,14 @@ pub trait ModuleBase {
                         },
                         Msg::Activate { module } => {
                             Msg::InitUpdates { module: module,
-                                               updates: self.init_updates() }
+                                               updates: self.activate_updates() }
                         },
                         _ => {
                             warn!("message should not arrive here: {}", req);
                             continue;
                         }
                     };
-                    self.rep_sender().send((Some(hid), rep)).unwrap();
+                    self.internals().rep_sender.send((Some(hid), rep)).unwrap();
                 },
                 recv(poll) -> _ => {
                     self.poll_normal(poll_normal_counter);
