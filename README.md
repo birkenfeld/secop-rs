@@ -1,10 +1,12 @@
 # secop-rs
 
-A Rust framework and demo implementation of a hardware server for the
+A Rust framework and demo devices for a hardware server speaking the
 [SECoP protocol](https://github.com/SampleEnvironment/SECoP).
 
 ## Build/run
 
-Install Rust + Cargo (easiest: https://rustup.rs).
+[Install the Rust toolchain](https://rustup.rs), currently the *nightly* channel is required.
 
-Then `cargo run -- test.cfg`.
+Debug mode (faster compilation): `cargo run -- test.cfg`.
+
+Release mode (optimized for speed): `cargo run --release -- test.cfg`.
