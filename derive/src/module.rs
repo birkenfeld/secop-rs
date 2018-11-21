@@ -96,11 +96,13 @@ struct SecopParam {
     group: String,
     #[darling(default = "default_polling")]
     polling: i64,
-    // TODO: add "visibility" (none, user, advanced, expert)
+    #[darling(default = "default_visibility")]
+    visibility: String,
 }
 
 // The default is to poll a parameter in every cycle.
 fn default_polling() -> i64 { 1 }
+fn default_visibility() -> String { "user".into() }
 
 /// Representation of the #[command(...)] attribute.
 #[derive(FromMeta, Debug)]
@@ -109,6 +111,10 @@ struct SecopCommand {
     doc: String,
     argtype: String,
     restype: String,
+    #[darling(default)]
+    group: String,
+    #[darling(default = "default_visibility")]
+    visibility: String,
 }
 
 
@@ -160,10 +166,18 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut init_params_read = vec![];
 
     for p in params {
-        let SecopParam { name, doc, readonly, datatype, unit, group, polling, default } = p;
+        let SecopParam { name, doc, readonly, datatype, unit, group,
+                         polling, default, visibility } = p;
 
         if !lc_names.insert(name.to_lowercase()) {
             panic!("param/cmd name {} is not unique", name)
+        }
+
+        // TODO: make this a proper enum?
+        if visibility != "none" && visibility != "user" && visibility != "advanced" &&
+            visibility != "expert"
+        {
+            panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
         }
 
         let type_static = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
@@ -268,30 +282,39 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         }
 
-        let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
-        let group_entry = if !group.is_empty() { quote! { "group": #group, } } else { quote! {} };
-        descriptive.push(quote! {
-            json!([#name, {
-                "description": #doc,
-                "datatype": #type_static.type_json(),
-                "readonly": #readonly,
-                #unit_entry
-                #group_entry
-            }]),
-        });
+        if visibility != "none" {
+            let unit_entry = if !unit.is_empty() {
+                quote! { "unit": #unit, }
+            } else { quote! {} };
+            descriptive.push(quote! {
+                json!([#name, {
+                    "description": #doc,
+                    "datatype": #type_static.type_json(),
+                    "readonly": #readonly,
+                    "group": #group,
+                    "visibility": #visibility,
+                    #unit_entry
+                }]),
+            });
+        }
     }
 
     for c in commands {
-        let SecopCommand { name, doc, .. } = c;
+        let SecopCommand { name, doc, argtype, restype, group, visibility } = c;
 
         if !lc_names.insert(name.to_lowercase()) {
             panic!("param/cmd name {} is not unique", name)
         }
 
+        if visibility != "none" && visibility != "user" && visibility != "advanced" &&
+            visibility != "expert"
+        {
+            panic!("visibility {:?} is not an allowed value for command {}", visibility, name);
+        }
         let argtype_static = Ident::new(&format!("CMD_ARG_{}", name), Span::call_site());
-        let argtype_expr = syn::parse_str::<Expr>(&c.argtype).expect("unparseable datatype");
+        let argtype_expr = syn::parse_str::<Expr>(&argtype).expect("unparseable datatype");
         let restype_static = Ident::new(&format!("CMD_RES_{}", name), Span::call_site());
-        let restype_expr = syn::parse_str::<Expr>(&c.restype).expect("unparseable datatype");
+        let restype_expr = syn::parse_str::<Expr>(&restype).expect("unparseable datatype");
         let do_method = Ident::new(&format!("do_{}", name), Span::call_site());
         statics.push(quote! {
             static ref #argtype_static : datatype_type!(#argtype_expr) = #argtype_expr;
@@ -305,13 +328,17 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 Ok(json!([result, {"t": localtime()}]))
             }
         });
-        descriptive.push(quote! {
-            json!([#name, {
-                "description": #doc,
-                "datatype": ["command", #argtype_static.type_json(),
-                             #restype_static.type_json()],
-            }]),
-        });
+        if visibility != "none" {
+            descriptive.push(quote! {
+                json!([#name, {
+                    "description": #doc,
+                    "datatype": ["command", #argtype_static.type_json(),
+                                 #restype_static.type_json()],
+                    "group": #group,
+                    "visibility": #visibility,
+                }]),
+            });
+        }
     }
 
     let poll_busy_params = &poll_busy_params;

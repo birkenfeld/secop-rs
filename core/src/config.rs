@@ -43,6 +43,7 @@ pub struct ModuleConfig {
     pub description: String,
     pub group: Option<String>,
     pub parameters: HashMap<String, Value>,
+    // TODO: visibility
 }
 
 
