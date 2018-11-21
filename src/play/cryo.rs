@@ -32,7 +32,7 @@ use secop_derive::{ModuleBase, TypeDesc};
 
 // These should later be put into a "core" or "prelude" type export module.
 use crate::errors::Result;
-use crate::module::{Module, ModInternals};
+use crate::module::{Module, ModuleBase, ModInternals};
 use crate::util::localtime;
 use crate::types::*;
 
@@ -262,6 +262,7 @@ struct PID {
           argtype="None", restype="None")]
 pub struct Cryo {
     internals: ModInternals,
+    pcache: CryoParamCache,
     vars: Arc<Mutex<StateVars>>,
 }
 
@@ -273,8 +274,9 @@ impl Module for Cryo {
                                target: 0.0, setpoint: 0.0 };
         let vars = Arc::new(Mutex::new(vars));
         let sim = CryoSimulator { vars: Arc::clone(&vars) };
+        let pcache = CryoParamCache::default();
         thread::spawn(move || sim.run());
-        Cryo { internals, vars }
+        Cryo { internals, pcache, vars }
     }
 
 }
@@ -306,16 +308,35 @@ impl Cryo {
 
     fn write_target(&mut self, value: f64) -> Result<()> { Ok(self.vars.lock().target = value) }
     fn write_ramp(&mut self, value: f64)   -> Result<()> { Ok(self.vars.lock().ramp = value) }
-    fn write_p(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_p = value) }
-    fn write_i(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_i = value) }
-    fn write_d(&mut self, value: f64)      -> Result<()> { Ok(self.vars.lock().k_d = value) }
-    fn write_mode(&mut self, value: Mode)  -> Result<()> { Ok(self.vars.lock().control = value == Mode::PID) }
+    fn write_p(&mut self, value: f64)      -> Result<()> {
+        self.vars.lock().k_p = value;
+        let _ = self.read("pid");
+        Ok(())
+    }
+    fn write_i(&mut self, value: f64)      -> Result<()> {
+        self.vars.lock().k_i = value;
+        let _ = self.read("pid");
+        Ok(())
+    }
+    fn write_d(&mut self, value: f64)      -> Result<()> {
+        self.vars.lock().k_d = value;
+        let _ = self.read("pid");
+        Ok(())
+    }
+    fn write_mode(&mut self, value: Mode)  -> Result<()> {
+        Ok(self.vars.lock().control = value == Mode::PID)
+    }
 
     fn write_pid(&mut self, value: PID) -> Result<()> {
-        let mut v = self.vars.lock();
-        v.k_p = value.p;
-        v.k_i = value.i;
-        v.k_d = value.d;
+        {
+            let mut v = self.vars.lock();
+            v.k_p = value.p;
+            v.k_i = value.i;
+            v.k_d = value.d;
+        }
+        let _ = self.read("p");
+        let _ = self.read("i");
+        let _ = self.read("d");
         Ok(())
     }
 

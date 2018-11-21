@@ -59,14 +59,14 @@ pub trait ModuleBase {
 
     fn describe(&self) -> Value;
     fn command(&mut self, cmd: &str, args: Value) -> Result<Value, Error>;
-    fn read(&mut self, param: &str, pcache: &mut Self::ParamCache) -> Result<Value, Error>;
-    fn change(&mut self, param: &str, value: Value, pcache: &mut Self::ParamCache) -> Result<Value, Error>;
-    fn init_updates(&mut self, pcache: &mut Self::ParamCache) -> Vec<Msg>;
+    fn read(&mut self, param: &str) -> Result<Value, Error>;
+    fn change(&mut self, param: &str, value: Value) -> Result<Value, Error>;
+    fn init_updates(&mut self) -> Vec<Msg>;
     // TODO: is a result necessary?
-    fn init_params(&mut self, pcache: &mut Self::ParamCache) -> Result<(), Error>;
+    fn init_params(&mut self) -> Result<(), Error>;
 
-    fn poll_normal(&mut self, n: usize, pcache: &mut Self::ParamCache);
-    fn poll_busy(&mut self, n: usize, pcache: &mut Self::ParamCache);
+    fn poll_normal(&mut self, n: usize);
+    fn poll_busy(&mut self, n: usize);
 
     #[inline]
     fn internals(&self) -> &ModInternals;
@@ -93,11 +93,10 @@ pub trait ModuleBase {
         let poll = tick(Duration::from_millis(1000));
         let poll_busy = tick(Duration::from_millis(200));
 
-        let mut param_cache = Self::ParamCache::default();
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;
 
-        if let Err(e) = self.init_params(&mut param_cache) {
+        if let Err(e) = self.init_params() {
             warn!("error initializing params: {}", e);
         }
 
@@ -105,12 +104,11 @@ pub trait ModuleBase {
             select! {
                 recv(self.req_receiver()) -> res => if let Ok((hid, req)) = res {
                     let rep = match req.1 {
-                        Msg::Read { module, param } => match self.read(&param, &mut param_cache) {
+                        Msg::Read { module, param } => match self.read(&param) {
                             Ok(data) => Msg::Update { module, param, data },
                             Err(e) => e.into_msg(req.0),
                         },
-                        Msg::Change { module, param, value } => match self.change(&param, value,
-                                                                                  &mut param_cache) {
+                        Msg::Change { module, param, value } => match self.change(&param, value) {
                             Ok(data) => Msg::Changed { module, param, data },
                             Err(e) => e.into_msg(req.0),
                         },
@@ -120,7 +118,7 @@ pub trait ModuleBase {
                         },
                         Msg::Activate { module } => {
                             Msg::InitUpdates { module: module,
-                                               updates: self.init_updates(&mut param_cache) }
+                                               updates: self.init_updates() }
                         },
                         _ => {
                             warn!("message should not arrive here: {}", req);
@@ -130,11 +128,11 @@ pub trait ModuleBase {
                     self.rep_sender().send((Some(hid), rep)).unwrap();
                 },
                 recv(poll) -> _ => {
-                    self.poll_normal(poll_normal_counter, &mut param_cache);
+                    self.poll_normal(poll_normal_counter);
                     poll_normal_counter = poll_normal_counter.wrapping_add(1);
                 },
                 recv(poll_busy) -> _ => {
-                    self.poll_busy(poll_busy_counter, &mut param_cache);
+                    self.poll_busy(poll_busy_counter);
                     poll_busy_counter = poll_busy_counter.wrapping_add(1);
                 }
             }
