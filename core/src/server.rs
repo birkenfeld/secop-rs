@@ -23,8 +23,8 @@
 //! This module contains the server instance itself, and associated objects to
 //! handle connections and message routing.
 
-use std::io;
-use std::io::{Read as IoRead, Write as IoWrite};
+use std::error::Error as StdError;
+use std::io::{self, Read as IoRead, Write as IoWrite};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
 use std::thread;
@@ -34,13 +34,12 @@ use derive_new::new;
 use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver, select};
 use serde_json::{Value, json};
+use mlzutil::time::localtime;
 
 use crate::config::ServerConfig;
 use crate::errors::Error;
 use crate::module::ModInternals;
 use crate::proto::{IncomingMsg, Msg, Msg::*, IDENT_REPLY};
-use crate::util::localtime;
-use crate::play;
 
 pub const RECVBUF_LEN: usize = 4096;
 pub const MAX_MSG_LEN: usize = 1024*1024;
@@ -78,7 +77,9 @@ impl Server {
 
     /// Main server function; start threads to accept clients on the listening
     /// socket, the dispatcher, and the individual modules.
-    pub fn start(mut self, addr: &str) -> io::Result<()> {
+    pub fn start<F>(mut self, addr: &str, mod_runner: F) -> io::Result<()>
+        where F: Fn(ModInternals) -> Result<Value, Box<StdError>>
+    {
         // create a few channels we need for the dispatcher:
         // sending info about incoming connections to the dispatcher
         let (con_sender, con_receiver) = unbounded();
@@ -101,7 +102,7 @@ impl Server {
             let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender);
             active_sets.insert(name.clone(), HashSet::default());
             mod_senders.insert(name, mod_sender);
-            module_desc.push(play::run_module(int).expect("TODO handle me"));
+            module_desc.push(mod_runner(int).expect("TODO handle me"));
         }
 
         let descriptive = json!({

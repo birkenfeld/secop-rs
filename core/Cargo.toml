@@ -1,0 +1,26 @@
+[package]
+name = "secop-core"
+version = "0.1.1"
+authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
+           "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4"
+time = "0.1"
+toml = "0.4"
+base64 = "0.10"
+fxhash = "0.2"
+regex = "1.0"
+memchr = "2.1"
+mlzlog = "0.4"
+mlzutil = "0.1"
+serde = "1.0"
+serde_json = "1.0"
+serde_derive = "1.0"
+lazy_static = "1.2"
+derive-new = "0.5"
+crossbeam-channel = "0.3"
+
+[dependencies.secop-derive]
+path = "../derive"

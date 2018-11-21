@@ -351,6 +351,7 @@ pub type Status = (StatusConst, StdString);
 // (since statics don't allow inferring the type).
 //
 // This provides a working but very brittle way of doing this, for now.
+#[macro_export]
 macro_rules! datatype_type {
     (DoubleFrom($_:expr)) => (DoubleFrom);
     (DoubleRange($_:expr, $__:expr)) => (DoubleRange);

@@ -217,7 +217,7 @@ impl fmt::Display for Msg {
                 else { write!(f, "{} {}", wire::PING, token) },
             ErrMsg { class, report } =>
                 write!(f, "{} {} {}", wire::ERROR, class, report),
-            InitUpdates { module, updates } => write!(f, "<updates>"),
+            InitUpdates { .. } => write!(f, "<updates>"),
             Quit => write!(f, "<eof>"),
         }
     }

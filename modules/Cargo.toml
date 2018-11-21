@@ -1,7 +1,5 @@
-[workspace]
-
 [package]
-name = "secop"
+name = "secop-modules"
 version = "0.1.1"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
            "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
@@ -9,14 +7,14 @@ edition = "2018"
 
 [dependencies]
 log = "0.4"
-clap = "2.32"
 mlzlog = "0.4"
 mlzutil = "0.1"
-daemonize = "0.3"
-chan-signal = "0.3"
+serde_json = "1.0"
+lazy_static = "1.2"
+parking_lot = "0.6"
 
 [dependencies.secop-core]
-path = "core"
+path = "../core"
 
-[dependencies.secop-modules]
-path = "modules"
+[dependencies.secop-derive]
+path = "../derive"

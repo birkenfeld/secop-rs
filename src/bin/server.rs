@@ -20,24 +20,14 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! The main entry point and crate definitions.
-
-#![allow(unused_variables)]
-
-mod util;
-mod proto;
-mod server;
-mod config;
-pub mod module;
-#[macro_use]
-pub mod types;
-pub mod errors;
-
-// module implementations to play around
-mod play;
+//! The main entry point for the server executable.
 
 use log::*;
 use clap::{clap_app, crate_version};
+use mlzutil::fs as fsutil;
+
+use secop_core::config;
+use secop_core::server::Server;
 
 
 fn main() {
@@ -57,8 +47,8 @@ fn main() {
         (@arg config: +required "Configuration file name to load")
     ).get_matches();
 
-    let log_path = util::abspath(args.value_of("log").expect(""));
-    let pid_path = util::abspath(args.value_of("pid").expect(""));
+    let log_path = fsutil::abspath(args.value_of("log").expect(""));
+    let pid_path = fsutil::abspath(args.value_of("pid").expect(""));
     if args.is_present("daemon") {
         let mut daemon = daemonize::Daemonize::new();
         if let Some(user) = args.value_of("user") {
@@ -83,17 +73,17 @@ fn main() {
                                    !args.is_present("daemon")) {
         eprintln!("could not initialize logging: {}", err);
     }
-    if let Err(err) = util::write_pidfile(&pid_path) {
+    if let Err(err) = fsutil::write_pidfile(&pid_path, cfgname) {
         error!("could not write PID file: {}", err);
     }
 
     match config::load_config(cfgname) {
         Err(err) => error!("could not parse config file {}: {}", cfgname, err),
         Ok(cfg)  => {
-            let server = server::Server::new(cfg);
+            let server = Server::new(cfg);
             let bind_addr = args.value_of("bind").expect("");
             info!("starting server on {}...", bind_addr);
-            if let Err(err) = server.start(bind_addr) {
+            if let Err(err) = server.start(bind_addr, secop_modules::run_module) {
                 error!("could not initialize server: {}", err);
             } else {
                 // server is running; wait for a signal to finish
@@ -103,5 +93,5 @@ fn main() {
     }
 
     info!("quitting...");
-    util::remove_pidfile(pid_path);
+    fsutil::remove_pidfile(pid_path, cfgname);
 }

@@ -165,14 +165,15 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
             use serde_json::{json, Value};
-            use lazy_static::lazy_static;
-            use crate::errors::Error;
+            use lazy_static::{lazy_static, __lazy_static_internal, __lazy_static_create};
+            use crate::secop_core::errors::Error;
+            use crate::secop_core::types::TypeDesc;
 
             lazy_static! {
                 #( #statics )*
             }
 
-            impl crate::types::TypeDesc for #struct_name {
+            impl TypeDesc for #struct_name {
                 type Repr = #name;
                 fn type_json(&self) -> Value {
                     json!(["struct", { #( #descr_members )* }])
@@ -231,9 +232,10 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
             use serde_json::{json, Value};
-            use crate::errors::Error;
+            use crate::secop_core::errors::Error;
+            use crate::secop_core::types::TypeDesc;
 
-            impl crate::types::TypeDesc for #struct_name {
+            impl TypeDesc for #struct_name {
                 type Repr = #name;
                 fn type_json(&self) -> Value {
                     json!(["enum", { #( #descr_members )* }])

@@ -28,13 +28,13 @@ use std::thread;
 use std::time::Duration;
 use log::*;
 use parking_lot::Mutex;
-use secop_derive::{ModuleBase, TypeDesc};
+use mlzutil::time::localtime;
 
 // These should later be put into a "core" or "prelude" type export module.
-use crate::errors::Result;
-use crate::module::{Module, ModuleBase, ModInternals};
-use crate::util::localtime;
-use crate::types::*;
+use secop_core::errors::Result;
+use secop_core::module::{Module, ModuleBase, ModInternals};
+use secop_core::types::*;
+use secop_derive::{ModuleBase, TypeDesc};
 
 #[derive(Default)]
 struct StateVars {

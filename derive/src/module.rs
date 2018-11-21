@@ -302,16 +302,16 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     // generate the final code!
     let generated_impl = input.gen_impl(quote! {
         use serde_json::{Value, json};
-        use lazy_static::lazy_static;
-        use crate::errors::{Error, ErrorKind, Result};
-        use crate::proto::Msg;
-        use crate::util::localtime;
+        use lazy_static::{lazy_static, __lazy_static_internal, __lazy_static_create};
+        use mlzutil::time::localtime;
+        use secop_core::errors::{Error, ErrorKind, Result};
+        use secop_core::proto::Msg;
 
         lazy_static! {
             #( #statics )*
         }
 
-        gen impl crate::module::ModuleBase for @Self {
+        gen impl secop_core::module::ModuleBase for @Self {
             type ParamCache = #param_cache_name;
 
             fn internals(&self) -> &ModInternals { &self.internals }
