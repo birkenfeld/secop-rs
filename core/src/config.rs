@@ -22,26 +22,27 @@
 //
 //! Configuration file handling.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use serde_derive::Deserialize;
+use serde_json::Value;
 use toml;
 
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct ServerConfig {
     pub description: String,
     #[serde(skip)]
     pub equipment_id: String,
-    pub modules: Vec<ModuleConfig>,
+    pub modules: HashMap<String, ModuleConfig>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ModuleConfig {
-    pub name: String,
     pub class: String,
     pub description: String,
     pub group: Option<String>,
+    pub parameters: HashMap<String, Value>,
 }
 
 
@@ -54,9 +55,9 @@ pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
 
     // TODO: check groups as well
     let mut lc_names = HashSet::new();
-    for modcfg in &obj.modules {
-        if !lc_names.insert(modcfg.name.to_lowercase()) {
-            return Err(format!("module name {} is not unique", modcfg.name))
+    for name in obj.modules.keys() {
+        if !lc_names.insert(name.to_lowercase()) {
+            return Err(format!("module name {} is not unique", name))
         }
     }
 

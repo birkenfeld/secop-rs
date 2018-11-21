@@ -96,6 +96,7 @@ struct SecopParam {
     group: String,
     #[darling(default = "default_polling")]
     polling: i64,
+    // TODO: add "visibility" (none, user, advanced, expert)
 }
 
 // The default is to poll a parameter in every cycle.
@@ -231,7 +232,6 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         });
 
-        // TODO: there may also be initial values given in the config instead.
         // TODO: handle errors better, in particular, isolate failures and log them
         // with the parameter name given.
         if let Some(def) = default {
@@ -242,18 +242,30 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             let def_expr = syn::parse_str::<Expr>(&def).unwrap_or_else(
                 |e| panic!("unparseable default value for param {}: {}", name, e));
             init_params_write.push(quote! {
-                let value = #type_static.to_json(#def_expr)?;
+                let value = if let Some(val) = self.config().parameters.get(#name) {
+                    val.clone()
+                } else {
+                    #type_static.to_json(#def_expr)?
+                };
                 // This will emit an update message, but since the server is starting
                 // up, we can assume it hasn't been activated yet.
                 self.change(#name, value)?;
             });
         } else {
-            // no default: call read method
-            init_params_read.push(quote! {
-                // This will emit an update message, but since the server is starting
-                // up, we can assume it hasn't been activated yet.
-                self.read(#name)?;
-            });
+            if !readonly {
+                init_params_read.push(quote! {
+                    if let Some(val) = self.config().parameters.get(#name) {
+                        self.change(#name, val.clone())?;
+                    } else {
+                        self.read(#name)?;
+                    }
+                })
+            } else {
+                // no default and readonly: call read method
+                init_params_read.push(quote! {
+                    self.read(#name)?;
+                });
+            }
         }
 
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
@@ -341,6 +353,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                     #( #par_write_arms, )*
                     _ => return Err(Error::no_param())
                 };
+                // TODO: return the readback value
                 Ok(json!([value, {"t": tstamp}]))
             }
 

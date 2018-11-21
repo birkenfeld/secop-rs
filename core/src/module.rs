@@ -96,16 +96,16 @@ pub trait ModuleBase {
                                 Msg::Describing { id: self.name().into(),
                                                   structure: self.describe() })).unwrap();
 
+        if let Err(e) = self.init_params() {
+            warn!("error initializing params: {}", e);
+        }
+
         // TODO: customizable poll interval
         let poll = tick(Duration::from_millis(1000));
         let poll_busy = tick(Duration::from_millis(200));
 
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;
-
-        if let Err(e) = self.init_params() {
-            warn!("error initializing params: {}", e);
-        }
 
         loop {
             select! {

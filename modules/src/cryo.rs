@@ -243,9 +243,6 @@ struct PID {
 #[param(name="heater", doc="current heater setting",
         datatype="DoubleRange(0.0, 100.0)",
         readonly=true, unit="%")]
-#[param(name="pid", doc="regulation coefficients",
-        datatype="PIDType", polling="0",
-        readonly=false, group="pid")]
 #[param(name="p", doc="regulation coefficient P",
         datatype="DoubleFrom(0.0)", polling="-5",
         readonly=false, default="40.0", unit="%/K", group="pid")]
@@ -255,6 +252,9 @@ struct PID {
 #[param(name="d", doc="regulation coefficient D",
         datatype="DoubleRange(0.0, 100.0)", polling="-5",
         readonly=false, default="2.0", group="pid")]
+#[param(name="pid", doc="regulation coefficients",
+        datatype="PIDType", polling="0",
+        readonly=false, group="pid")]
 #[param(name="mode", doc="regulation mode",
         datatype="ModeType", polling="0",
         readonly=false, default="Mode::PID", group="pid")]

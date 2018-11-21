@@ -92,8 +92,7 @@ impl Server {
         let mut active_sets = HashMap::default();
         let mut mod_senders = HashMap::default();
 
-        for modcfg in self.config.modules.drain(..) {
-            let name = modcfg.name.clone();
+        for (name, modcfg) in self.config.modules.drain() {
             // channel to send requests to the module
             let (mod_sender, mod_receiver) = unbounded();
             // replies go via a single one
