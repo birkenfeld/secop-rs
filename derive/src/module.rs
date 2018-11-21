@@ -355,7 +355,6 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                     "description": self.config().description,
                     "interface_class": ["Drivable"], // TODO
                     "features": [],
-                    "group": "", // TODO
                     "visibility": "user", // TODO
                     "group": self.config().group,
                     "accessibles": accessibles
