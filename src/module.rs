@@ -97,7 +97,9 @@ pub trait ModuleBase {
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;
 
-        self.init_updates(&mut param_cache);
+        if let Err(e) = self.init_params(&mut param_cache) {
+            warn!("error initializing params: {}", e);
+        }
 
         loop {
             select! {

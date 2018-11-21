@@ -224,25 +224,25 @@ struct PID {
 #[derive(ModuleBase)]
 #[param(name="status", doc="status",
         datatype="StatusType",
-        readonly=true, default="0.0", unit="K")]
+        readonly=true)]
 #[param(name="value", doc="regulation temperature",
         datatype="DoubleFrom(0.0)",
-        readonly=true, default="0.0", unit="K")]
+        readonly=true, unit="K")]
 #[param(name="sample", doc="sample temperature",
         datatype="DoubleFrom(0.0)",
-        readonly=true, default="0.0", unit="K")]
+        readonly=true, unit="K")]
 #[param(name="target", doc="target temperature",
         datatype="DoubleFrom(0.0)",
         readonly=false, default="0.0", unit="K")]
 #[param(name="setpoint", doc="current setpoint for the temperature",
         datatype="DoubleFrom(0.0)",
-        readonly=true, default="0.0", unit="K")]
+        readonly=true, unit="K")]
 #[param(name="ramp", doc="setpoint ramping speed",
         datatype="DoubleRange(0.0, 1e3)",
         readonly=false, default="1.0", unit="K/min")]
 #[param(name="heater", doc="current heater setting",
         datatype="DoubleRange(0.0, 100.0)",
-        readonly=true, default="0.0", unit="%")]
+        readonly=true, unit="%")]
 #[param(name="pid", doc="regulation coefficients",
         datatype="PIDType", polling="0",
         readonly=false, group="pid")]
@@ -257,7 +257,7 @@ struct PID {
         readonly=false, default="2.0", group="pid")]
 #[param(name="mode", doc="regulation mode",
         datatype="ModeType", polling="0",
-        readonly=false, default="2.0", group="pid")]
+        readonly=false, default="Mode::PID", group="pid")]
 #[command(name="stop", doc="stop ramping the setpoint",
           argtype="None", restype="None")]
 pub struct Cryo {

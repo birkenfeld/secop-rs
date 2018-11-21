@@ -99,13 +99,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut poll_busy_params = vec![];
     let mut poll_other_params = vec![];
     let mut init_updates = vec![];
+    let mut init_params_write = vec![];
+    let mut init_params_read = vec![];
 
     for p in params {
-        // TODO: process default
-        // If default is present, set it in cache and write to device on startup.
-        // If default is not present, read from device on startup.
-
-        let SecopParam { name, doc, readonly, datatype, unit, group, polling, .. } = p;
+        let SecopParam { name, doc, readonly, datatype, unit, group, polling, default } = p;
 
         if !lc_names.insert(name.to_lowercase()) {
             panic!("param/cmd name {} is not unique", name)
@@ -122,6 +120,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         statics.push(quote! {
             static ref #type_static : datatype_type!(#type_expr) = #type_expr;
         });
+        // TODO: catch and log errors
         par_write_arms.push(if p.readonly { quote! {
             #name => return Err(Error::new(ErrorKind::ReadOnly, ""))
         } } else { quote! {
@@ -138,6 +137,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 (value, tstamp)
             }
         } });
+        // TODO: catch and log errors
         par_read_arms.push(quote! {
             #name => {
                 let r_value = self.#read_method()?;
@@ -153,9 +153,10 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         });
         if polling != 0 {
-            let polling_abs = polling.abs() as usize;
+            let polling_period = polling.abs() as usize;
             let poll_it = quote! {
-                if n % #polling_abs == 0 {
+                if n % #polling_period == 0 {
+                    // TODO: error handling?
                     let _ = self.read(#name, pcache);
                 }
             };
@@ -173,6 +174,32 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                                        data: json!([value, {"t": pcache.#name_id.1}]) });
             }
         });
+
+        // TODO: there may also be initial values given in the config instead.
+        // TODO: handle errors better, in particular, isolate failures and log them
+        // with the parameter name given.
+        if let Some(def) = default {
+            // default is given: use it
+            if readonly {
+                panic!("parameter {} cannot have a default since it is readonly", name);
+            }
+            let def_expr = syn::parse_str::<Expr>(&def).unwrap_or_else(
+                |e| panic!("unparseable default value for param {}: {}", name, e));
+            init_params_write.push(quote! {
+                let value = #type_static.to_json(#def_expr)?;
+                // This will emit an update message, but since the server is starting
+                // up, we can assume it hasn't been activated yet.
+                self.change(#name, value, pcache)?;
+            });
+        } else {
+            // no default: call read method
+            init_params_read.push(quote! {
+                // This will emit an update message, but since the server is starting
+                // up, we can assume it hasn't been activated yet.
+                self.read(#name, pcache)?;
+            });
+        }
+
         let unit_entry = if !unit.is_empty() { quote! { "unit": #unit, } } else { quote! {} };
         let group_entry = if !group.is_empty() { quote! { "group": #group, } } else { quote! {} };
         descriptive.push(quote! {
@@ -202,6 +229,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             static ref #argtype_static : datatype_type!(#argtype_expr) = #argtype_expr;
             static ref #restype_static : datatype_type!(#restype_expr) = #restype_expr;
         });
+        // TODO: catch and log errors
         cmd_arms.push(quote! {
             #name => #restype_static.to_json(self.#do_method(#argtype_static.from_json(&arg)?)?)
         });
@@ -281,6 +309,10 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
 
             fn init_params(&mut self, pcache: &mut Self::ParamCache) -> Result<()> {
+                // Initials that are written are processed first, so that the initial
+                // read for the other parameters makes use of the written ones already.
+                #( #init_params_write )*
+                #( #init_params_read )*
                 Ok(())
             }
 

@@ -40,12 +40,15 @@ def recvall(s, length):
 def ask_only():
     cons = connect(opts.s)
     query = ''.join('read cryo:target\n' for _ in range(opts.n))
-    rep = ''.join('update cryo:target [0.0,{}]\n' for _ in range(opts.n))
+    # NOTE: this expects that the timestamps are all zero, so that we can expect
+    # a reproducible reply.
+    rep = ''.join('update cryo:target [0.0,{"t":0.0}]\n' for _ in range(opts.n))
     t1 = time.time()
     for con in cons:
         con.sendall(query)
     for con in cons:
-        assert recvall(con, len(rep)) == rep
+        rr = recvall(con, len(rep))
+        assert rr == rep, rr[:1000]
     return t1
 
 
