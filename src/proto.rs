@@ -45,7 +45,7 @@ lazy_static! {
     "#).expect("valid regex");
 }
 
-pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-02-13,rc2";
+pub const IDENT_REPLY: &str = "SINE2020&ISSE,SECoP,V2018-11-07,rc3";
 
 /// Enum that represents any message that can be sent over the network in the
 /// protocol, and some others that are only used internally.
