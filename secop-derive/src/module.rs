@@ -324,8 +324,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 ];
                 json!([self.name(), {
                     "description": self.config().description,
+                    "interface_class": ["Drivable"], // TODO
                     // "visibility": "TODO",
-                    // "interface_class": "TODO",
                     // "features": ["TODO"],
                     "group": self.config().group,
                     "accessibles": accessibles
