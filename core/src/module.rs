@@ -22,12 +22,12 @@
 //
 //! This module contains basic module functionality.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use log::*;
 use serde_json::{Value, json};
 use derive_new::new;
 use mlzutil::time::localtime;
-use crossbeam_channel::{Sender, Receiver, tick, select};
+use crossbeam_channel::{tick, Sender, Receiver, select};
 
 use crate::config::{ModuleConfig, Visibility};
 use crate::errors::Error;
@@ -42,6 +42,7 @@ pub struct ModInternals {
     config: ModuleConfig,
     req_receiver: Receiver<(HId, IncomingMsg)>,
     rep_sender: Sender<(Option<HId>, Msg)>,
+    poll_tickers: (Receiver<Instant>, Receiver<Instant>),
 }
 
 impl ModInternals {
@@ -66,6 +67,11 @@ pub struct CachedParam<T> {
 impl<T: PartialEq + Clone> CachedParam<T> {
     pub fn new(value: T) -> Self {
         Self { data: value, time: localtime() }
+    }
+
+    pub fn set(&mut self, value: T) {
+        self.time = localtime();
+        self.data = value;
     }
 
     /// Gets a newly determined value for this parameter, which is then cached,
@@ -130,6 +136,8 @@ pub trait ModuleBase {
     #[inline]
     fn internals(&self) -> &ModInternals;
     #[inline]
+    fn internals_mut(&mut self) -> &mut ModInternals;
+    #[inline]
     fn name(&self) -> &str { &self.internals().name }
     #[inline]
     fn config(&self) -> &ModuleConfig { &self.internals().config }
@@ -141,6 +149,19 @@ pub trait ModuleBase {
             (None, Msg::Update { module: self.name().into(),
                                  param: param.into(),
                                  data: json!([value, {"t": tstamp}]) })).unwrap();
+    }
+
+    /// Updates the regular poll interval to the given value in seconds, and the
+    /// busy poll interval to 1/5 of it.
+    ///
+    /// This is like an ordinary `update_param` method, but on the trait since
+    /// it is always implemented the same.
+    fn update_pollinterval(&mut self, val: f64) -> Result<(), Error> {
+        self.internals_mut().poll_tickers = (
+            tick(Duration::from_millis((val * 1000.) as u64)),
+            tick(Duration::from_millis((val * 200.) as u64)),
+        );
+        Ok(())
     }
 
     /// Runs the main loop for the module, which does the following:
@@ -163,10 +184,6 @@ pub trait ModuleBase {
             warn!("error initializing params: {}", e);
             // TODO: and now?
         }
-
-        // TODO: customizable poll interval
-        let poll = tick(Duration::from_millis(1000));
-        let poll_busy = tick(Duration::from_millis(200));
 
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;
@@ -200,11 +217,11 @@ pub trait ModuleBase {
                     };
                     self.internals().rep_sender.send((Some(hid), rep)).unwrap();
                 },
-                recv(poll) -> _ => {
+                recv(self.internals().poll_tickers.0) -> _ => {
                     self.poll_normal(poll_normal_counter);
                     poll_normal_counter = poll_normal_counter.wrapping_add(1);
                 },
-                recv(poll_busy) -> _ => {
+                recv(self.internals().poll_tickers.1) -> _ => {
                     self.poll_busy(poll_busy_counter);
                     poll_busy_counter = poll_busy_counter.wrapping_add(1);
                 }

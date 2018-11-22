@@ -27,12 +27,13 @@ use std::error::Error as StdError;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
+use std::time::Duration;
 use std::thread;
 use log::*;
 use memchr::memchr;
 use derive_new::new;
 use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use crossbeam_channel::{unbounded, Sender, Receiver, select};
+use crossbeam_channel::{unbounded, Sender, Receiver, select, tick};
 use serde_json::{Value, json};
 use mlzutil::time::localtime;
 
@@ -97,7 +98,8 @@ impl Server {
             let (mod_sender, mod_receiver) = unbounded();
             // replies go via a single one
             let mod_rep_sender = rep_sender.clone();
-            let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender);
+            let tickers = (tick(Duration::from_secs(1)), tick(Duration::from_secs(1)));
+            let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender, tickers);
             active_sets.insert(name.clone(), HashSet::default());
             mod_senders.insert(name, mod_sender);
             mod_runner(int)?;

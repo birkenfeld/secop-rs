@@ -84,31 +84,51 @@ use quote::{quote, quote_spanned};
 use darling::FromMeta;
 
 
+/// All the possible properties of a parameter.
+///
 /// Representation of the #[param(...)] attribute.
 #[derive(FromMeta, Debug)]
 struct SecopParam {
+    /// Name of the parameter.
     name: String,
+    /// Documentation/description (also transmitted to clients).
     doc: String,
+    /// Datatype, from secop_core::types or self-defined.
     datatype: String,
+    /// If true, the parameter cannot be changed from a client.
     readonly: bool,
+    /// If true, the parameter is only software-related and does not
+    /// need to be propagated to hardware.
+    #[darling(default)]
+    swonly: bool,
+    /// If true, the parameter must be given in the config file.
+    /// (Not possible if readonly and !swonly).
+    #[darling(default)]
+    mandatory: bool,
+    /// If given, a default value for the parameter.
+    /// Parameters with swonly set *must* have a default.
     #[darling(default)]
     default: Option<String>,
+    /// Poll interval, in multiples of the poll interval.
+    /// If negative, do not accelerate polling when module is busy.
+    /// Parameters with swonly set are not polled.
+    #[darling(default)]
+    polling: Option<i64>,
+    /// The unit of the parameter's value.
     #[darling(default)]
     unit: String,
+    /// The group to display the parameter under.
     #[darling(default)]
     group: String,
-    #[darling(default = "default_polling")]
-    polling: i64,
+    /// The visibility of the parameter, can be "none" to not
+    /// transmit information about it to clients.
     #[darling(default = "default_visibility")]
     visibility: String,
 }
 
-// The default is to poll a parameter in every cycle.
-fn default_polling() -> i64 { 1 }
-fn default_visibility() -> String { "user".into() }
-
 // Can't use the definition of core, since core depends on this crate.
 const VISIBILITIES: &[&str] = &["none", "user", "advanced", "expert"];
+fn default_visibility() -> String { "user".into() }
 
 /// Representation of the #[command(...)] attribute.
 #[derive(FromMeta, Debug)]
@@ -188,17 +208,35 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut poll_busy_params = vec![];
     let mut poll_other_params = vec![];
     let mut activate_updates = vec![];
+    let mut init_params_swonly = vec![];
     let mut init_params_write = vec![];
     let mut init_params_read = vec![];
 
-    for SecopParam { name, doc, readonly, datatype, unit,
-                     group, polling, default, visibility } in params {
+    for SecopParam { name, doc, datatype, readonly, swonly, mandatory, polling,
+                     default, unit, group, visibility } in params {
+        let polling = polling.unwrap_or(if swonly { 0 } else { 1 });
+
         // Check necessary invariants.
         if !lc_names.insert(name.to_lowercase()) {
             panic!("param/cmd name {} is not unique", name)
         }
         if !VISIBILITIES.iter().any(|&v| v == visibility) {
             panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
+        }
+        if swonly {
+            if polling != 0 {
+                panic!("software-only parameters cannot be polled");
+            }
+            if default.is_none() && !mandatory {
+                panic!("software-only parameters must have a default if not mandatory");
+            }
+        } else {
+            if default.is_some() && readonly {
+                panic!("readonly hardware parameters cannot have a default");
+            }
+            if mandatory && readonly {
+                panic!("readonly hardware parameters cannot be mandatory");
+            }
         }
 
         let name_id = Ident::new(&name, Span::call_site());
@@ -220,27 +258,51 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         // If forgotten, the errors should be pretty clear.
         let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
         let write_method = Ident::new(&format!("write_{}", name), Span::call_site());
+        let update_method = Ident::new(&format!("update_{}", name), Span::call_site());
 
         // TODO: catch and log errors
-        par_read_arms.push(quote! {
-            #name => {
-                let read_value = self.#read_method()?;
-                let (value, time, send) = self.cache.#name_id.update(read_value, &*#type_static)?;
-                if send {
-                    self.send_update(#name, value.clone(), time);
+        par_read_arms.push(match swonly {
+            false => quote! {
+                #name => {
+                    let read_value = self.#read_method()?;
+                    let (value, time, send) = self.cache.#name_id.update(read_value, &*#type_static)?;
+                    if send {
+                        self.send_update(#name, value.clone(), time);
+                    }
+                    (value, time)
                 }
-                (value, time)
-            }
+            },
+            true => quote! {
+                #name => {
+                    let value = #type_static.to_json(self.cache.#name_id.cloned())?;
+                    (value, self.cache.#name_id.time())
+                }
+            },
         });
         // TODO: catch and log errors
-        par_write_arms.push(if readonly { quote! {
-            #name => Err(Error::new(ErrorKind::ReadOnly, ""))
-        } } else { quote! {
-            #name => {
-                self.#write_method(#type_static.from_json(&value)?)?;
-                self.read(#name)
-            }
-        } });
+        par_write_arms.push(match (swonly, readonly) {
+            (false, false) => quote! {
+                #name => {
+                    self.#write_method(#type_static.from_json(&value)?)?;
+                    self.read(#name)
+                }
+            },
+            (true, false) => quote! {
+                #name => {
+                    // TODO: simplify?
+                    let (value, time, send) =
+                        self.cache.#name_id.update(#type_static.from_json(&value)?, &*#type_static)?;
+                    if send {
+                        self.send_update(#name, value.clone(), time);
+                        self.#update_method(self.cache.#name_id.cloned())?;
+                    }
+                    Ok(json!([value, {"t": time}]))
+                }
+            },
+            (_, true)  => quote! {
+                #name => Err(Error::new(ErrorKind::ReadOnly, ""))
+            },
+        });
 
         // Generate entry for the polling loop.
         if polling != 0 {
@@ -274,43 +336,47 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         // code, config file, hardware) and multiple ways of using them
         // (depending on whether the parameter is writable at runtime).
         //
-        // TODO: add a setting whether the parameter can be read/written on the
-        // hardware.  If not, it should be allowed to at least give it a
-        // default value.
-        //
-        // TODO: should we generate read/write inherent methods for non-hardware
-        // parameters that just go to the pcache?
-        //
         // TODO: handle errors better, in particular, isolate failures and log
         // them with the parameter name given.
-        if let Some(def) = default {
-            // default is given: use it
-            if readonly {
-                panic!("parameter {} cannot have a default since it is readonly", name);
+        //
+        // TODO: check mandatory (where?)
+        let def_expr = default.map(|def| syn::parse_str::<Expr>(&def).unwrap_or_else(
+            |e| panic!("unparseable default value for param {}: {}", name, e)));
+        match (swonly, readonly, def_expr) {
+            (true, _, Some(def)) => {
+                init_params_swonly.push(quote! {
+                    let value = if let Some(val) = self.config().parameters.get(#name) {
+                        #type_static.from_json(val)?
+                    } else {
+                        #def
+                    };
+                    self.cache.#name_id.set(value);
+                    self.#update_method(self.cache.#name_id.cloned())?;
+                });
+            },
+            (true, _, _) => unreachable!(),
+            (false, false, Some(def)) => {
+                init_params_write.push(quote! {
+                    let value = if let Some(val) = self.config().parameters.get(#name) {
+                        val.clone()
+                    } else {
+                        #type_static.to_json(#def)?
+                    };
+                    // This will emit an update message, but since the server is starting
+                    // up, we can assume it hasn't been activated yet.
+                    self.change(#name, value)?;
+                });
             }
-            let def_expr = syn::parse_str::<Expr>(&def).unwrap_or_else(
-                |e| panic!("unparseable default value for param {}: {}", name, e));
-            init_params_write.push(quote! {
-                let value = if let Some(val) = self.config().parameters.get(#name) {
-                    val.clone()
-                } else {
-                    #type_static.to_json(#def_expr)?
-                };
-                // This will emit an update message, but since the server is starting
-                // up, we can assume it hasn't been activated yet.
-                self.change(#name, value)?;
-            });
-        } else {
-            if !readonly {
-                init_params_read.push(quote! {
+            (false, false, None) => {
+                init_params_write.push(quote! {
                     if let Some(val) = self.config().parameters.get(#name) {
                         self.change(#name, val.clone())?;
                     } else {
                         self.read(#name)?;
                     }
-                })
-            } else {
-                // no default and readonly: call read method
+                });
+            }
+            (false, true, _) => {
                 init_params_read.push(quote! {
                     self.read(#name)?;
                 });
@@ -397,6 +463,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
         gen impl ModuleBase for @Self {
             fn internals(&self) -> &ModInternals { &self.internals }
+            fn internals_mut(&mut self) -> &mut ModInternals { &mut self.internals }
 
             fn describe(&self) -> Value {
                 let accessibles = vec![
@@ -443,6 +510,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             fn init_params(&mut self) -> Result<()> {
                 // Initials that are written are processed first, so that the initial
                 // read for the other parameters makes use of the written ones already.
+                #( #init_params_swonly )*
                 #( #init_params_write )*
                 #( #init_params_read )*
                 Ok(())

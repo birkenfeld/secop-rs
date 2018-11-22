@@ -264,6 +264,9 @@ struct PID {
 #[param(name="mode", doc="regulation mode",
         datatype="ModeType", polling="0",
         readonly=false, default="Mode::PID", group="pid")]
+#[param(name="pollinterval", doc="polling interval",
+        datatype="DoubleFrom(1.0)", swonly=true,
+        readonly=false, default="1.0")]
 #[command(name="stop", doc="stop ramping the setpoint",
           argtype="None", restype="None")]
 pub struct SimCryo {
