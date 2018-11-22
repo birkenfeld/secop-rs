@@ -214,11 +214,11 @@ impl Default for Mode {
 #[derive(TypeDesc, Clone, PartialEq, Default)]
 struct PID {
     #[datatype="DoubleFrom(0.0)"]
-    p: f64,
+    p: Option<f64>,
     #[datatype="DoubleFrom(0.0)"]
-    i: f64,
+    i: Option<f64>,
     #[datatype="DoubleFrom(0.0)"]
-    d: f64,
+    d: Option<f64>,
 }
 
 #[derive(ModuleBase)]
@@ -293,7 +293,7 @@ impl Cryo {
     fn read_d(&mut self)        -> Result<f64> { Ok(self.vars.lock().k_d) }
     fn read_pid(&mut self)      -> Result<PID> {
         let v = self.vars.lock();
-        Ok(PID { p: v.k_p, i: v.k_i, d: v.k_d })
+        Ok(PID { p: Some(v.k_p), i: Some(v.k_i), d: Some(v.k_d) })
     }
     fn read_mode(&mut self)     -> Result<Mode> {
         Ok(if self.vars.lock().control { Mode::PID } else { Mode::OpenLoop })
@@ -330,9 +330,9 @@ impl Cryo {
     fn write_pid(&mut self, value: PID) -> Result<()> {
         {
             let mut v = self.vars.lock();
-            v.k_p = value.p;
-            v.k_i = value.i;
-            v.k_d = value.d;
+            if let Some(p) = value.p { v.k_p = p; }
+            if let Some(i) = value.i { v.k_i = i; }
+            if let Some(d) = value.d { v.k_d = d; }
         }
         let _ = self.read("p");
         let _ = self.read("i");

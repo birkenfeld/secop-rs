@@ -114,12 +114,13 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
     let mut member_to_json = Vec::new();
     let mut member_from_json = Vec::new();
     let mut descr_members = Vec::new();
+    let mut descr_optional = Vec::new();
 
     // Go through each field, and construct the SECoP metatype for it.
     for binding in input.variants()[0].bindings() {
         // We could support tuple structs to work the same as tuples, but it
         // seems unnecessary at the moment.
-        let ident = &binding.ast().ident.as_ref().unwrap_or_else(
+        let ident = binding.ast().ident.as_ref().unwrap_or_else(
             || panic!("TypeDesc cannot be derived for tuple structs"));
         let ident_str = ident.to_string();
         // We need the metatype instance globally available somewhere.  Since
@@ -140,23 +141,51 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
             |e| panic!("member {} has no valid datatype attribute: {}", ident_str, e));
         let dtype_expr = syn::parse_str::<Expr>(&dtype).unwrap_or_else(
             |_| panic!("member {} has no valid datatype attribute", ident_str));
+        // Check if the Rust type is an Option.
+        let mut is_option_type = false;
+        if let syn::Type::Path(ref ptype) = binding.ast().ty {
+            if ptype.path.segments[0].ident == "Option" {
+                is_option_type = true;
+            }
+        }
 
         statics.push(quote! {
             static ref #dtype_static : datatype_type!(#dtype_expr) = #dtype_expr;
         });
 
         // Other code snippets we need to construct the TypeDesc impl.
-        member_to_json.push(quote! {
-            #ident_str: #dtype_static.to_json(val.#ident)
-                                 .map_err(|e| e.amend(concat!("in ", #ident_str)))?,
-        });
-        member_from_json.push(quote! {
-            #ident: #dtype_static.from_json(
-                obj.get(#ident_str).ok_or_else(
-                    || Error::bad_value(concat!("missing ", #ident_str, " in object")))?
-            ).map_err(|e| e.amend(concat!("in ", #ident_str)))?,
-        });
+        if is_option_type {
+            // Option<T>: value missing from JSON <=> value is None.
+            member_to_json.push(quote! {
+                if let Some(member) = val.#ident {
+                    let json_member = #dtype_static.to_json(member)
+                                                   .map_err(|e| e.amend(concat!("in ", #ident_str)))?;
+                    map.insert(#ident_str.into(), json_member);
+                }
+            });
+            member_from_json.push(quote! {
+                #ident: match obj.get(#ident_str) {
+                    Option::None => Option::None,
+                    Some(val) => Some(#dtype_static.from_json(val)
+                                      .map_err(|e| e.amend(concat!("in ", #ident_str)))?),
+                },
+            });
+        } else {
+            // Non-option type: value *must* be present in JSON.
+            member_to_json.push(quote! {
+                let json_member = #dtype_static.to_json(val.#ident)
+                                               .map_err(|e| e.amend(concat!("in ", #ident_str)))?;
+                map.insert(#ident_str.into(), json_member);
+            });
+            member_from_json.push(quote! {
+                #ident: #dtype_static.from_json(
+                    obj.get(#ident_str).ok_or_else(
+                        || Error::bad_value(concat!("missing ", #ident_str, " in object")))?
+                ).map_err(|e| e.amend(concat!("in ", #ident_str)))?,
+            });
+        }
         descr_members.push(quote! { #ident_str: #dtype_static.type_json(), });
+        descr_optional.push(quote! { #ident_str, });
     }
 
     let generated = quote! {
@@ -164,7 +193,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
 
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
-            use serde_json::{json, Value};
+            use serde_json::{json, Value, map::Map};
             use lazy_static::lazy_static;
             use crate::secop_core::errors::Error;
             use crate::secop_core::types::TypeDesc;
@@ -176,10 +205,12 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
             impl TypeDesc for #struct_name {
                 type Repr = #name;
                 fn type_json(&self) -> Value {
-                    json!(["struct", { #( #descr_members )* }])
+                    json!(["struct", { #( #descr_members )* }, [ #( #descr_optional )* ]])
                 }
                 fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, Error> {
-                    Ok(json!({ #( #member_to_json )* }))
+                    let mut map = Map::new();
+                    #( #member_to_json )*
+                    Ok(Value::Object(map))
                 }
                 fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, Error> {
                     if let Some(obj) = val.as_object() {
