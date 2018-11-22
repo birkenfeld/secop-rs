@@ -38,13 +38,9 @@ use secop_core::module::{Module, ModInternals};
 /// Inner (generic) implementation of `run_module`.
 fn inner_run<T: Module>(internals: ModInternals) {
     let name = internals.name().to_owned();
-    Builder::new().name(name.clone()).spawn(move || {
-        loop {
-            let new_internals = internals.clone();
-            // TODO: set a panic hook to put panics into the logger
-            if catch_unwind(|| T::create(new_internals).run()).is_err() {
-                error!("module {} panicked; restarting...", name);
-            }
+    Builder::new().name(name.clone()).spawn(move || loop {
+        if catch_unwind(|| T::create(internals.clone()).run()).is_err() {
+            error!("module {} panicked; restarting...", name);
         }
     }).expect("could not start thread");
 }

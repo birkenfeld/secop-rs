@@ -77,6 +77,26 @@ fn main() {
         error!("could not write PID file: {}", err);
     }
 
+    // set a panic hook to log panics into the logfile
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let payload = if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.as_str()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s
+        } else {
+            "???"
+        };
+        if let Some(location) = panic_info.location() {
+            error!("panic: {:?} ({})", payload, location);
+        } else {
+            error!("panic: {:?}", payload)
+        }
+        // call the original hook to get backtrace if requested
+        default_hook(panic_info);
+    }));
+
+    // load the config and run!
     match config::load_config(cfgname) {
         Err(err) => error!("could not parse config file {}: {}", cfgname, err),
         Ok(cfg)  => {
