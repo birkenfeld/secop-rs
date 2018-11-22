@@ -63,8 +63,8 @@ fn main() {
     }
 
     // handle SIGINT and SIGTERM
-    let signal_chan = chan_signal::notify(&[chan_signal::Signal::INT,
-                                            chan_signal::Signal::TERM]);
+    let signals = signal_hook::iterator::Signals::new(
+        &[signal_hook::SIGINT, signal_hook::SIGTERM]).expect("signal register failed");
 
     let cfgname = args.value_of("config").expect("is required");
 
@@ -87,7 +87,7 @@ fn main() {
                 error!("could not initialize server: {}", err);
             } else {
                 // server is running; wait for a signal to finish
-                signal_chan.recv().expect("sender never closed");
+                signals.wait();
             }
         }
     }

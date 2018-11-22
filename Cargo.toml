@@ -13,7 +13,7 @@ clap = "2.32"
 mlzlog = "0.4"
 mlzutil = "0.1"
 daemonize = "0.3"
-chan-signal = "0.3"
+signal-hook = "0.1"
 
 [dependencies.secop-core]
 path = "core"
