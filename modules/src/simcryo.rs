@@ -266,13 +266,13 @@ struct PID {
         readonly=false, default="Mode::PID", group="pid")]
 #[command(name="stop", doc="stop ramping the setpoint",
           argtype="None", restype="None")]
-pub struct Cryo {
+pub struct SimCryo {
     internals: ModInternals,
-    cache: CryoParamCache,
+    cache: SimCryoParamCache,
     vars: Arc<Mutex<StateVars>>,
 }
 
-impl Module for Cryo {
+impl Module for SimCryo {
     fn create(internals: ModInternals) -> Result<Self> {
         let vars = StateVars { sample: 5.0, regulation: 3.0, control: true,
                                k_p: 40.0, k_i: 10.0, k_d: 2.0,
@@ -280,9 +280,9 @@ impl Module for Cryo {
                                target: 0.0, setpoint: 0.0, stopflag: false };
         let vars = Arc::new(Mutex::new(vars));
         let sim = CryoSimulator { vars: Arc::clone(&vars) };
-        let cache = CryoParamCache::default();
+        let cache = SimCryoParamCache::default();
         thread::spawn(move || sim.run());
-        Ok(Cryo { internals, cache, vars })
+        Ok(Self { internals, cache, vars })
     }
 
     fn teardown(&mut self) {
@@ -290,7 +290,7 @@ impl Module for Cryo {
     }
 }
 
-impl Cryo {
+impl SimCryo {
     fn read_value(&mut self)    -> Result<f64> { Ok(self.vars.lock().regulation) }
     fn read_sample(&mut self)   -> Result<f64> { Ok(self.vars.lock().sample) }
     fn read_target(&mut self)   -> Result<f64> { Ok(self.vars.lock().target) }

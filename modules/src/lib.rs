@@ -25,7 +25,8 @@
 #[macro_use]
 extern crate secop_core;
 
-pub mod cryo;
+mod simcryo;
+mod serial;
 
 use std::panic::catch_unwind;
 use std::error::Error as StdError;
@@ -59,7 +60,8 @@ fn inner_run<T: Module>(internals: ModInternals) {
 /// Start the module's own thread.
 pub fn run_module(internals: ModInternals) -> Result<(), Box<StdError>> {
     Ok(match &*internals.class() {
-        "Cryo" => inner_run::<cryo::Cryo>(internals),
+        "SimCryo" => inner_run::<simcryo::SimCryo>(internals),
+        "SerialComm" => inner_run::<serial::SerialComm>(internals),
         _ => return Err(format!("no such module class: {}", internals.class()).into())
     })
 }
