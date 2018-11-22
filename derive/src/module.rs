@@ -132,9 +132,9 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut params = Vec::new();
     let mut commands = Vec::new();
 
+    let name = &input.ast().ident;
     let vis = &input.ast().vis;
-    let param_cache_name = Ident::new(&format!("{}ParamCache", input.ast().ident),
-                                      Span::call_site());
+    let param_cache_name = Ident::new(&format!("{}ParamCache", name), Span::call_site());
 
     // parse parameter and command attributes on the main struct
     for attr in &input.ast().attrs {
@@ -151,7 +151,21 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
     }
 
-    // TODO: check that the members include "internals" and "cache".
+    let mut has_internals = false;
+    let mut has_cache = false;
+    match &input.ast().data {
+        syn::Data::Struct(syn::DataStruct { fields: syn::Fields::Named(fields), .. }) => {
+            for field in &fields.named {
+                if field.ident.as_ref().unwrap() == "internals" { has_internals = true; }
+                if field.ident.as_ref().unwrap() == "cache" { has_cache = true; }
+            }
+        }
+        _ => panic!("derive(ModuleBase) is only possible for a struct with named fields")
+    }
+
+    if !has_internals || !has_cache {
+        panic!("struct {} must have members \"internals\" and \"cache\" members", name);
+    }
 
     let mut lc_names = HashSet::new();
 
