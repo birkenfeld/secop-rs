@@ -165,7 +165,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
             use serde_json::{json, Value};
-            use lazy_static::{lazy_static, __lazy_static_internal, __lazy_static_create};
+            use lazy_static::lazy_static;
             use crate::secop_core::errors::Error;
             use crate::secop_core::types::TypeDesc;
 
