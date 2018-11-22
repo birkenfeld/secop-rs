@@ -38,6 +38,10 @@ pub enum Visibility {
     Expert,
 }
 
+impl Default for Visibility {
+    fn default() -> Self { Visibility::User }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct ServerConfig {
     pub description: String,
@@ -51,7 +55,9 @@ pub struct ModuleConfig {
     pub class: String,
     pub description: String,
     pub group: Option<String>,
+    #[serde(default)]
     pub parameters: HashMap<String, Value>,
+    #[serde(default)]
     pub visibility: Visibility,
 }
 
@@ -63,11 +69,18 @@ pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
                                .file_stem()
                                .map_or("unknown".into(), |s| s.to_string_lossy().into_owned());
 
-    // TODO: check groups as well
+    // Check module names and groups for lowercase-uniqueness.
     let mut lc_names = HashSet::default();
+    let mut lc_groups = HashSet::default();
+    for modcfg in obj.modules.values() {
+        if let Some(group) = modcfg.group.as_ref() {
+            lc_groups.insert(group.to_string());
+        }
+    }
     for name in obj.modules.keys() {
-        if !lc_names.insert(name.to_lowercase()) {
-            return Err(format!("module name {} is not unique", name))
+        let lc_name = name.to_lowercase();
+        if lc_groups.contains(&lc_name) || !lc_names.insert(lc_name) {
+            return Err(format!("module name {} is not unique amoung modules and groups", name))
         }
     }
 
