@@ -24,7 +24,7 @@
 //! handle connections and message routing.
 
 use std::error::Error as StdError;
-use std::io::{self, Read as IoRead, Write as IoWrite};
+use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
 use std::thread;
@@ -77,7 +77,7 @@ impl Server {
 
     /// Main server function; start threads to accept clients on the listening
     /// socket, the dispatcher, and the individual modules.
-    pub fn start<F>(mut self, addr: &str, mod_runner: F) -> io::Result<()>
+    pub fn start<F>(mut self, addr: &str, mod_runner: F) -> Result<(), Box<StdError>>
         where F: Fn(ModInternals) -> Result<(), Box<StdError>>
     {
         // create a few channels we need for the dispatcher:
@@ -100,7 +100,7 @@ impl Server {
             let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender);
             active_sets.insert(name.clone(), HashSet::default());
             mod_senders.insert(name, mod_sender);
-            mod_runner(int).expect("TODO handle me");
+            mod_runner(int)?;
         }
 
         let descriptive = json!({

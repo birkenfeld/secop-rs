@@ -44,9 +44,9 @@ impl Default for Visibility {
 
 #[derive(Deserialize, Debug)]
 pub struct ServerConfig {
-    pub description: String,
-    #[serde(skip)]
+    #[serde(skip)] // provided by us
     pub equipment_id: String,
+    pub description: String,
     pub modules: HashMap<String, ModuleConfig>,
 }
 

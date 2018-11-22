@@ -54,7 +54,6 @@ fn inner_run<T: Module>(internals: ModInternals) {
 pub fn run_module(internals: ModInternals) -> Result<(), Box<StdError>> {
     Ok(match &*internals.class() {
         "Cryo" => inner_run::<cryo::Cryo>(internals),
-        // TODO: return a proper error
-        _ => panic!("No such module class: {}", internals.class())
+        _ => return Err(format!("no such module class: {}", internals.class()).into())
     })
 }
