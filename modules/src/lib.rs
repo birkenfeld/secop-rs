@@ -29,7 +29,8 @@ pub mod cryo;
 
 use std::panic::catch_unwind;
 use std::error::Error as StdError;
-use std::thread::Builder;
+use std::time::Duration;
+use std::thread::{Builder, sleep};
 use log::*;
 
 use secop_core::module::{Module, ModInternals};
@@ -39,8 +40,17 @@ use secop_core::module::{Module, ModInternals};
 fn inner_run<T: Module>(internals: ModInternals) {
     let name = internals.name().to_owned();
     Builder::new().name(name.clone()).spawn(move || loop {
-        if catch_unwind(|| T::create(internals.clone()).run()).is_err() {
-            error!("module {} panicked; restarting...", name);
+        if catch_unwind(|| {
+            T::create(internals.clone()).expect("init failed").run()
+        }).is_err() {
+            error!("module {} panicked, waiting...", name);
+            // remove all pending requests
+            internals.req_receiver().try_iter().count();
+            // wait for another request to arrive
+            while internals.req_receiver().is_empty() {
+                sleep(Duration::from_millis(100));
+            }
+            info!("now restarting module {}", name);
         }
     }).expect("could not start thread");
 }

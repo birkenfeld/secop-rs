@@ -424,6 +424,13 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         }
     });
+    let drop_impl = input.gen_impl(quote! {
+        gen impl Drop for @Self {
+            fn drop(&mut self) {
+                self.teardown();
+            }
+        }
+    });
     let generated = quote! {
         #[derive(Default)]
         #vis struct #param_cache_name {
@@ -431,6 +438,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
 
         #generated_impl
+        #drop_impl
     };
     // println!("{}", generated);
     generated

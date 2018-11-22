@@ -51,6 +51,9 @@ impl ModInternals {
     pub fn class(&self) -> &str {
         &self.config.class
     }
+    pub fn req_receiver(&self) -> &Receiver<(HId, IncomingMsg)> {
+        &self.req_receiver
+    }
 }
 
 /// Cache for a single parameter value.
@@ -94,7 +97,8 @@ impl<T: PartialEq + Clone> CachedParam<T> {
 
 /// Part of the Module trait to be implemented by user.
 pub trait Module : ModuleBase {
-    fn create(internals: ModInternals) -> Self where Self: Sized;
+    fn create(internals: ModInternals) -> Result<Self, Error> where Self: Sized;
+    fn teardown(&mut self);
 }
 
 /// Part of the Module trait that is implemented by the derive macro.
@@ -144,6 +148,8 @@ pub trait ModuleBase {
     fn run(mut self) where Self: Sized {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
+        // Tell the dispatcher how to describe ourselves.  If the visibility is
+        // "none", the module is assumed to be internal-use only.
         if self.config().visibility != Visibility::None {
             self.internals().rep_sender.send(
                 (None, Msg::Describing { id: self.name().into(),

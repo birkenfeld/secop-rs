@@ -39,6 +39,7 @@ use secop_derive::{ModuleBase, TypeDesc};
 #[derive(Default)]
 struct StateVars {
     // updated by user:
+    stopflag: bool,
     target: f64,
     ramp: f64,
     control: bool,
@@ -89,6 +90,11 @@ impl CryoSimulator {
             }
 
             let mut v = self.vars.lock();
+
+            if v.stopflag {
+                info!("exiting");
+                return;
+            }
 
             let heatflow = self.heat_link(v.regulation, v.sample);
             let newsample = (v.sample + h*(self.sample_leak(v.sample) -
@@ -267,18 +273,21 @@ pub struct Cryo {
 }
 
 impl Module for Cryo {
-    fn create(internals: ModInternals) -> Self {
+    fn create(internals: ModInternals) -> Result<Self> {
         let vars = StateVars { sample: 5.0, regulation: 3.0, control: true,
                                k_p: 40.0, k_i: 10.0, k_d: 2.0,
                                heater: 0.0, ramp: 0.0, ramping: false,
-                               target: 0.0, setpoint: 0.0 };
+                               target: 0.0, setpoint: 0.0, stopflag: false };
         let vars = Arc::new(Mutex::new(vars));
         let sim = CryoSimulator { vars: Arc::clone(&vars) };
         let cache = CryoParamCache::default();
         thread::spawn(move || sim.run());
-        Cryo { internals, cache, vars }
+        Ok(Cryo { internals, cache, vars })
     }
 
+    fn teardown(&mut self) {
+        self.vars.lock().stopflag = true;
+    }
 }
 
 impl Cryo {
