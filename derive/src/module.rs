@@ -104,6 +104,9 @@ struct SecopParam {
 fn default_polling() -> i64 { 1 }
 fn default_visibility() -> String { "user".into() }
 
+// Can't use the definition of core, since core depends on this crate.
+const VISIBILITIES: &[&str] = &["none", "user", "advanced", "expert"];
+
 /// Representation of the #[command(...)] attribute.
 #[derive(FromMeta, Debug)]
 struct SecopCommand {
@@ -173,10 +176,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             panic!("param/cmd name {} is not unique", name)
         }
 
-        // TODO: make this a proper enum?
-        if visibility != "none" && visibility != "user" && visibility != "advanced" &&
-            visibility != "expert"
-        {
+        if !VISIBILITIES.iter().any(|&v| v == visibility) {
             panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
         }
 
@@ -294,11 +294,10 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             panic!("param/cmd name {} is not unique", name)
         }
 
-        if visibility != "none" && visibility != "user" && visibility != "advanced" &&
-            visibility != "expert"
-        {
-            panic!("visibility {:?} is not an allowed value for command {}", visibility, name);
+        if !VISIBILITIES.iter().any(|&v| v == visibility) {
+            panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
         }
+
         let argtype_static = Ident::new(&format!("CMD_ARG_{}", name), Span::call_site());
         let argtype_expr = syn::parse_str::<Expr>(&argtype).expect("unparseable datatype");
         let restype_static = Ident::new(&format!("CMD_RES_{}", name), Span::call_site());
@@ -355,7 +354,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                     "description": self.config().description,
                     "interface_class": ["Drivable"], // TODO
                     "features": [],
-                    "visibility": "user", // TODO
+                    "visibility": self.config().visibility,
                     "group": self.config().group,
                     "accessibles": accessibles
                 }])

@@ -29,7 +29,7 @@ use derive_new::new;
 use mlzutil::time::localtime;
 use crossbeam_channel::{Sender, Receiver, tick, select};
 
-use crate::config::ModuleConfig;
+use crate::config::{ModuleConfig, Visibility};
 use crate::errors::Error;
 use crate::proto::{IncomingMsg, Msg};
 use crate::server::HId;
@@ -144,9 +144,11 @@ pub trait ModuleBase {
     fn run(mut self) where Self: Sized {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
-        self.internals().rep_sender.send(
-            (None, Msg::Describing { id: self.name().into(),
-                                     structure: self.describe() })).unwrap();
+        if self.config().visibility != Visibility::None {
+            self.internals().rep_sender.send(
+                (None, Msg::Describing { id: self.name().into(),
+                                         structure: self.describe() })).unwrap();
+        }
 
         if let Err(e) = self.init_params() {
             warn!("error initializing params: {}", e);

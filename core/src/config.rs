@@ -22,12 +22,21 @@
 //
 //! Configuration file handling.
 
-use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use serde_derive::Deserialize;
+use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use serde_derive::{Serialize, Deserialize};
 use serde_json::Value;
 use toml;
 
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Visibility {
+    None,
+    User,
+    Advanced,
+    Expert,
+}
 
 #[derive(Deserialize, Debug)]
 pub struct ServerConfig {
@@ -43,7 +52,7 @@ pub struct ModuleConfig {
     pub description: String,
     pub group: Option<String>,
     pub parameters: HashMap<String, Value>,
-    // TODO: visibility
+    pub visibility: Visibility,
 }
 
 
@@ -55,7 +64,7 @@ pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
                                .map_or("unknown".into(), |s| s.to_string_lossy().into_owned());
 
     // TODO: check groups as well
-    let mut lc_names = HashSet::new();
+    let mut lc_names = HashSet::default();
     for name in obj.modules.keys() {
         if !lc_names.insert(name.to_lowercase()) {
             return Err(format!("module name {} is not unique", name))
