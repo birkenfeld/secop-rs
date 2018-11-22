@@ -150,7 +150,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         }
 
         statics.push(quote! {
-            static ref #dtype_static : datatype_type!(#dtype_expr) = #dtype_expr;
+            static ref #dtype_static: typedesc_type!(#dtype_expr) = #dtype_expr;
         });
 
         // Other code snippets we need to construct the TypeDesc impl.
@@ -158,6 +158,8 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
             // Option<T>: value missing from JSON <=> value is None.
             member_to_json.push(quote! {
                 if let Some(member) = val.#ident {
+                    // Note the `amend`, in order to try making the error easier to
+                    // pinpoint in complex data structures.
                     let json_member = #dtype_static.to_json(member)
                                                    .map_err(|e| e.amend(concat!("in ", #ident_str)))?;
                     map.insert(#ident_str.into(), json_member);

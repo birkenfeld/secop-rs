@@ -67,7 +67,10 @@
 //!     }
 //! }
 //!
+//! // expected argument types here are determined by the `datatype` selected
+//! // in the param/command attribute above
 //! impl Motor {
+//!     // note, read_ can take &mut self or &self
 //!     fn read_value(&mut self) -> Result<f64> { ... }
 //!     fn write_target(&mut self, tgt: f64) -> Result<()> { ... }
 //!     fn do_stop(&mut self, arg: ()) -> Result<()> { ... }
@@ -121,6 +124,7 @@ struct SecopCommand {
 }
 
 
+/// Parse an attribute (using darling) into the given struct representation.
 fn parse_attr<T: FromMeta>(attr: &syn::Attribute) -> Result<T, proc_macro2::TokenStream> {
     attr.parse_meta()
         .map_err(|err| format!("invalid param attribute: {}", err))
@@ -128,6 +132,7 @@ fn parse_attr<T: FromMeta>(attr: &syn::Attribute) -> Result<T, proc_macro2::Toke
         .map_err(|e| quote_spanned! { attr.span() => compile_error!(#e); })
 }
 
+/// Main derive function for ModuleBase.
 pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream {
     let mut params = Vec::new();
     let mut commands = Vec::new();
@@ -136,7 +141,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let vis = &input.ast().vis;
     let param_cache_name = Ident::new(&format!("{}ParamCache", name), Span::call_site());
 
-    // parse parameter and command attributes on the main struct
+    // Parse parameter and command attributes on the main struct.
     for attr in &input.ast().attrs {
         if attr.path.segments[0].ident == "param" {
             match parse_attr::<SecopParam>(attr) {
@@ -151,6 +156,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
     }
 
+    // Check for required members. (TODO: make these functions on Module instead?)
     let mut has_internals = false;
     let mut has_cache = false;
     match &input.ast().data {
@@ -164,12 +170,15 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     }
 
     if !has_internals || !has_cache {
-        panic!("struct {} must have members \"internals\" and \"cache\" members", name);
+        panic!("struct {} must have \"internals: ModInternals\" and \
+                \"cache: {}ParamCache\" members", name, name);
     }
 
+    // We need to check names for uniqueness, after lowercasing.
+    // TODO: also check groups which are in the same namespace.
     let mut lc_names = HashSet::new();
 
-    // prepare snippets of code to generate
+    // Prepare snippets of code to generate.
     let mut statics = vec![];
     let mut par_read_arms = vec![];
     let mut par_write_arms = vec![];
@@ -182,29 +191,36 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut init_params_write = vec![];
     let mut init_params_read = vec![];
 
-    for p in params {
-        let SecopParam { name, doc, readonly, datatype, unit, group,
-                         polling, default, visibility } = p;
-
+    for SecopParam { name, doc, readonly, datatype, unit,
+                     group, polling, default, visibility } in params {
+        // Check necessary invariants.
         if !lc_names.insert(name.to_lowercase()) {
             panic!("param/cmd name {} is not unique", name)
         }
-
         if !VISIBILITIES.iter().any(|&v| v == visibility) {
             panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
         }
 
+        let name_id = Ident::new(&name, Span::call_site());
+        // The parameter metatype instances are in principle constant, but
+        // cannot be `const`, so we use `lazy_static` instead.
         let type_static = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
         let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
+        statics.push(quote! {
+            static ref #type_static: typedesc_type!(#type_expr) = #type_expr;
+        });
+
+        // Populate members of the parameter cache struct.
+        param_cache.push(quote! {
+            #name_id: secop_core::module::CachedParam<<typedesc_type!(#type_expr) as TypeDesc>::Repr>,
+        });
+
+        // Generate trampolines for read and write of the parameter.  These
+        // methods are expected to be present as inherent methods on the struct.
+        // If forgotten, the errors should be pretty clear.
         let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
         let write_method = Ident::new(&format!("write_{}", name), Span::call_site());
-        let name_id = Ident::new(&name, Span::call_site());
-        param_cache.push(quote! {
-            #name_id: secop_core::module::CachedParam<<datatype_type!(#type_expr) as TypeDesc>::Repr>,
-        });
-        statics.push(quote! {
-            static ref #type_static: datatype_type!(#type_expr) = #type_expr;
-        });
+
         // TODO: catch and log errors
         par_read_arms.push(quote! {
             #name => {
@@ -217,7 +233,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         });
         // TODO: catch and log errors
-        par_write_arms.push(if p.readonly { quote! {
+        par_write_arms.push(if readonly { quote! {
             #name => Err(Error::new(ErrorKind::ReadOnly, ""))
         } } else { quote! {
             #name => {
@@ -225,11 +241,13 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 self.read(#name)
             }
         } });
+
+        // Generate entry for the polling loop.
         if polling != 0 {
             let polling_period = polling.abs() as usize;
             let poll_it = quote! {
                 if n % #polling_period == 0 {
-                    // TODO: error handling?
+                    // TODO: error handling (should send a "null" update message)
                     let _ = self.read(#name);
                 }
             };
@@ -239,17 +257,32 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 poll_other_params.push(poll_it);
             }
         }
+
+        // Generate entries for the "initial updates" phase of activation.
         activate_updates.push(quote! {
             // TODO: really ignore errors?
-            if let Ok(value) = #type_static.to_json(self.cache.#name_id.data()) {
+            if let Ok(value) = #type_static.to_json(self.cache.#name_id.cloned()) {
                 res.push(Msg::Update { module: self.name().to_string(),
                                        param: #name.to_string(),
                                        data: json!([value, {"t": self.cache.#name_id.time()}]) });
             }
         });
 
-        // TODO: handle errors better, in particular, isolate failures and log them
-        // with the parameter name given.
+        // Generate parameter initialization code.
+        //
+        // This is quite complex since we have multiple sources (defaults from
+        // code, config file, hardware) and multiple ways of using them
+        // (depending on whether the parameter is writable at runtime).
+        //
+        // TODO: add a setting whether the parameter can be read/written on the
+        // hardware.  If not, it should be allowed to at least give it a
+        // default value.
+        //
+        // TODO: should we generate read/write inherent methods for non-hardware
+        // parameters that just go to the pcache?
+        //
+        // TODO: handle errors better, in particular, isolate failures and log
+        // them with the parameter name given.
         if let Some(def) = default {
             // default is given: use it
             if readonly {
@@ -284,6 +317,9 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         }
 
+        // Generate the parameter's entry in the descriptive data.  If the
+        // visibility is "none", the parameter is completely hidden, but can
+        // still be manipulated when known to exist.
         if visibility != "none" {
             let unit_entry = if !unit.is_empty() {
                 quote! { "unit": #unit, }
@@ -301,13 +337,12 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
     }
 
-    for c in commands {
-        let SecopCommand { name, doc, argtype, restype, group, visibility } = c;
-
+    // Handling for commands is very similar to, but simpler than, parameter handling,
+    // since commands do not have to do initialization, caching, or polling.
+    for SecopCommand { name, doc, argtype, restype, group, visibility } in commands {
         if !lc_names.insert(name.to_lowercase()) {
             panic!("param/cmd name {} is not unique", name)
         }
-
         if !VISIBILITIES.iter().any(|&v| v == visibility) {
             panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
         }
@@ -318,8 +353,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         let restype_expr = syn::parse_str::<Expr>(&restype).expect("unparseable datatype");
         let do_method = Ident::new(&format!("do_{}", name), Span::call_site());
         statics.push(quote! {
-            static ref #argtype_static : datatype_type!(#argtype_expr) = #argtype_expr;
-            static ref #restype_static : datatype_type!(#restype_expr) = #restype_expr;
+            static ref #argtype_static: typedesc_type!(#argtype_expr) = #argtype_expr;
+            static ref #restype_static: typedesc_type!(#restype_expr) = #restype_expr;
         });
         // TODO: catch and log errors
         cmd_arms.push(quote! {
@@ -342,10 +377,13 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         }
     }
 
+    // So that we can interpolate it twice below.
     let poll_busy_params = &poll_busy_params;
 
-    // generate the final code!
+    // Generate the final code.  Most is contained in the impl of ModuleBase,
+    // some other bits are done below.
     let generated_impl = input.gen_impl(quote! {
+        // Try to `use` all necessary APIs here.
         use serde_json::{Value, json};
         use lazy_static::lazy_static;
         use mlzutil::time::localtime;
@@ -411,6 +449,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
 
             fn poll_normal(&mut self, n: usize) {
+                // The parameters with special busy-poll handling are not polled here,
+                // to avoid polling them twice at the almost same time.
                 if self.cache.status.as_ref().0 != StatusConst::Busy {
                     #( #poll_busy_params )*
                 }
@@ -424,6 +464,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         }
     });
+
+    // Implement Drop to be able to call the teardown function in every case,
+    // especially on panic.  (There is no inherent advantage to the user directly
+    // implementing Drop, but this puts setup and teardown closer together
+    // in the Module trait.)
     let drop_impl = input.gen_impl(quote! {
         gen impl Drop for @Self {
             fn drop(&mut self) {
@@ -431,6 +476,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         }
     });
+
     let generated = quote! {
         #[derive(Default)]
         #vis struct #param_cache_name {

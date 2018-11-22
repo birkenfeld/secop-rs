@@ -86,7 +86,7 @@ impl<T: PartialEq + Clone> CachedParam<T> {
         &self.data
     }
 
-    pub fn data(&self) -> T {
+    pub fn cloned(&self) -> T {
         self.data.clone()
     }
 
@@ -124,6 +124,9 @@ pub trait ModuleBase {
     /// Poll parameters that participate in busy-poll if device status is busy.
     fn poll_busy(&mut self, n: usize);
 
+    /// Return a reference to the module internals.  Even though we require
+    /// the internals to be a member with a fixed name, the member is not
+    /// known in the `run` method below.
     #[inline]
     fn internals(&self) -> &ModInternals;
     #[inline]

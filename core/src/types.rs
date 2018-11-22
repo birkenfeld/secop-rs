@@ -352,14 +352,14 @@ pub type Status = (StatusConst, StdString);
 //
 // This provides a working but very brittle way of doing this, for now.
 #[macro_export]
-macro_rules! datatype_type {
+macro_rules! typedesc_type {
     (DoubleFrom($_:expr)) => (DoubleFrom);
     (DoubleRange($_:expr, $__:expr)) => (DoubleRange);
     (Integer($_:expr, $__:expr)) => (Integer);
     (Blob($_:expr)) => (Blob);
     (String($_:expr)) => (String);
     (Enum($_:expr)) => (Enum);
-    (ArrayOf($($tp:tt)*, $_:expr, $__:expr)) => (ArrayOf<datatype_type!($($tp)*)>);
+    (ArrayOf($($tp:tt)*, $_:expr, $__:expr)) => (ArrayOf<typedesc_type!($($tp)*)>);
     // For "simple" (unit-struct) types, which includes user-derived types.
     ($stalone_type:ty) => ($stalone_type);
 }
