@@ -41,7 +41,7 @@
 //! #[param(name="value", datatype="Double", readonly=True)]
 //! #[param(name="target", datatype="Double")]
 //! #[param(name="speed", datatype="DoubleFrom(0.0)", default="1.0")]
-//! #[command(name="stop", argtype="None", restype="None")]
+//! #[command(name="stop", argtype="Null", restype="Null")]
 //! struct Motor {
 //!     // required by the framework
 //!     internals: ModInternals,

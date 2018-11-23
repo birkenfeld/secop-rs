@@ -167,7 +167,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
             });
             member_from_json.push(quote! {
                 #ident: match obj.get(#ident_str) {
-                    Option::None => Option::None,
+                    None => None,
                     Some(val) => Some(#dtype_static.from_json(val)
                                       .map_err(|e| e.amend(concat!("in ", #ident_str)))?),
                 },

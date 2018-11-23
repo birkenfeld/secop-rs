@@ -268,7 +268,7 @@ struct PID {
         datatype="DoubleFrom(1.0)", swonly=true,
         readonly=false, default="1.0")]
 #[command(name="stop", doc="stop ramping the setpoint",
-          argtype="None", restype="None")]
+          argtype="Null", restype="Null")]
 pub struct SimCryo {
     internals: ModInternals,
     cache: SimCryoParamCache,

@@ -22,7 +22,6 @@
 //
 //! Module to communicate via a serial port.
 
-use std::string::String as StdString;
 // use log::*;
 
 // These should later be put into a "core" or "prelude" type export module.
@@ -34,7 +33,9 @@ use secop_derive::{ModuleBase};
 #[derive(ModuleBase)]
 #[param(name="status", doc="status", datatype="StatusType", readonly=true)]
 #[command(name="communicate", doc="communicate (write/read cycle)",
-          argtype="String(1024)", restype="String(1024)")]
+          argtype="Str(1024)", restype="Str(1024)")]
+// #[command(name="read", doc="read a message",
+//           argtype="Null", restype="Str(1024)")]
 pub struct SerialComm {
     internals: ModInternals,
     cache: SerialCommParamCache,
@@ -54,7 +55,7 @@ impl SerialComm {
         Ok((StatusConst::Idle, "idle".into()))
     }
 
-    fn do_communicate(&self, _req: StdString) -> Result<StdString> {
+    fn do_communicate(&self, _req: String) -> Result<String> {
         Ok("".into())
     }
 }

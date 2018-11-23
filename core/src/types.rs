@@ -23,7 +23,6 @@
 //
 //! SECoP data type definitions.
 
-use std::string::String as StdString;
 use fxhash::FxHashMap as HashMap;
 use serde_json::{Value, json};
 use secop_derive::TypeDesc;
@@ -51,10 +50,10 @@ pub trait TypeDesc {
 }
 
 
-/// None is not usable as a parameter data type, only for commands.
-pub struct None;
+/// Null is not usable as a parameter data type, only for commands.
+pub struct Null;
 
-impl TypeDesc for None {
+impl TypeDesc for Null {
     type Repr = ();
     fn type_json(&self) -> Value { json!(null) }
     fn to_json(&self, _: Self::Repr) -> Result<Value, Error> {
@@ -138,9 +137,9 @@ impl TypeDesc for DoubleRange {
 }
 
 
-pub struct Integer(pub i64, pub i64);
+pub struct Int(pub i64, pub i64);
 
-impl TypeDesc for Integer {
+impl TypeDesc for Int {
     type Repr = i64;
     fn type_json(&self) -> Value { json!(["int", self.0, self.1]) }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
@@ -186,10 +185,10 @@ impl TypeDesc for Blob {
 }
 
 
-pub struct String(pub usize);
+pub struct Str(pub usize);
 
-impl TypeDesc for String {
-    type Repr = StdString;
+impl TypeDesc for Str {
+    type Repr = String;
     fn type_json(&self) -> Value { json!(["string", 0, self.0]) }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val.len() <= self.0 {
@@ -286,7 +285,7 @@ impl_tuple!(Tuple6 => T1, T2, T3, T4, T5, T6 : 6 : 0, 1, 2, 3, 4, 5);
 ///
 /// You should prefer implementing your own enum class and deriving `TypeDesc`
 /// for it using secop-derive.
-pub struct Enum(pub HashMap<StdString, i64>);
+pub struct Enum(pub HashMap<String, i64>);
 
 impl TypeDesc for Enum {
     type Repr = i64;
@@ -337,11 +336,11 @@ impl Default for StatusConst {
 //
 // This only looks confusing unless you realize that for unit-structs,
 // there is *always* a constant with the same name as the type.
-pub type StatusType = Tuple2<StatusConstType, String>;
+pub type StatusType = Tuple2<StatusConstType, Str>;
 #[allow(non_upper_case_globals)]
-pub const StatusType: StatusType = Tuple2(StatusConstType, String(1024));
+pub const StatusType: StatusType = Tuple2(StatusConstType, Str(1024));
 
-pub type Status = (StatusConst, StdString);
+pub type Status = (StatusConst, String);
 
 
 // This is a bit of a mess :(
@@ -355,9 +354,9 @@ pub type Status = (StatusConst, StdString);
 macro_rules! typedesc_type {
     (DoubleFrom($_:expr)) => (DoubleFrom);
     (DoubleRange($_:expr, $__:expr)) => (DoubleRange);
-    (Integer($_:expr, $__:expr)) => (Integer);
+    (Int($_:expr, $__:expr)) => (Int);
     (Blob($_:expr)) => (Blob);
-    (String($_:expr)) => (String);
+    (Str($_:expr)) => (Str);
     (Enum($_:expr)) => (Enum);
     (ArrayOf($($tp:tt)*, $_:expr, $__:expr)) => (ArrayOf<typedesc_type!($($tp)*)>);
     // For "simple" (unit-struct) types, which includes user-derived types.
