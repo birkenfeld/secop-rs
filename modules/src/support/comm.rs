@@ -31,6 +31,7 @@ use log::*;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 
 use secop_core::errors::{Error, Result};
+use secop_core::types::{Status, StatusConst};
 
 pub type Connector<R, W> = Box<FnMut() -> Result<(R, W)> + Send + 'static>;
 
@@ -57,6 +58,10 @@ pub struct CommClient<W> {
 }
 
 impl<W: Write> CommClient<W> {
+    fn is_connected(&self) -> bool {
+        self.shared.connected.load(Ordering::Relaxed)
+    }
+
     fn get_line(&self, mut buffer: MutexGuard<Vec<u8>>) -> Result<Vec<u8>> {
         let neol = self.eol.len();
         let end = buffer
@@ -186,5 +191,53 @@ impl<R: Read + Send + 'static, W: Write + Send + 'static> CommThread<R, W> {
             }
         }
         debug!("reader thread exited normally");
+    }
+}
+
+/// Common code for modules that export a CommClient.
+// TODO: standardize interface and move to a different module
+// TODO: better name?
+pub trait HasComm {
+    type IO: Read + Write;
+
+    fn get_comm(&self) -> Result<&CommClient<Self::IO>>;
+
+    fn read_status(&mut self) -> Result<Status> {
+        if self.get_comm().ok().map_or(false, |c| c.is_connected()) {
+            Ok((StatusConst::Idle, "idle".into()))
+        } else {
+            Ok((StatusConst::Warn, "not connected".into()))
+        }
+    }
+
+    fn convert(&self, bytes: Result<Vec<u8>>) -> Result<String> {
+        bytes.map(|v| {
+            String::from_utf8(v)
+                .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
+        })
+    }
+
+    fn do_communicate(&self, arg: String) -> Result<String> {
+        self.convert(self.get_comm()?.communicate(arg.as_bytes()))
+    }
+
+    fn do_writeline(&self, arg: String) -> Result<()> {
+        self.get_comm()?.write(arg.as_bytes(), true).map(|_| ())
+    }
+
+    fn do_readline(&self, _: ()) -> Result<String> {
+        self.convert(self.get_comm()?.readline())
+    }
+
+    fn do_write(&self, arg: String) -> Result<()> {
+        self.get_comm()?.write(arg.as_bytes(), false).map(|_| ())
+    }
+
+    fn do_read(&self, _: ()) -> Result<String> {
+        self.convert(self.get_comm()?.read(u32::max_value()))
+    }
+
+    fn do_multi_communicate(&self, _req: Vec<(String, f64)>) -> Result<Vec<String>> {
+        panic!("multi_communicate is not yet implemented");
     }
 }

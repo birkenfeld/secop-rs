@@ -30,20 +30,13 @@ use log::*;
 use secop_core::errors::{Error, Result};
 use secop_core::module::{Module, ModInternals};
 use secop_core::types::*;
-use secop_derive::{ModuleBase, TypeDesc};
+use secop_derive::ModuleBase;
 
-use crate::support::comm::{CommClient, CommThread};
-
-#[derive(TypeDesc)]
-struct CommElement {
-    #[datatype="Str(1024)"]
-    message: String,
-    #[datatype="Double"]
-    waittime: f64,
-}
+use crate::support::comm::{CommClient, CommThread, HasComm};
 
 
 #[derive(ModuleBase)]
+// TODO: factor out these common params/commands
 #[param(name="status", doc="status", datatype="StatusType", readonly=true)]
 #[command(name="communicate", doc="communicate (write/read cycle)",
           argtype="Str(1024)", restype="Str(1024)")]
@@ -56,7 +49,7 @@ struct CommElement {
 #[command(name="write", doc="write raw string",
           argtype="Str(1024)", restype="Null")]
 #[command(name="multi_communicate", doc="do multiple communicate cycles",
-          argtype="ArrayOf(1, 16, CommElementType)",
+          argtype="ArrayOf(1, 16, Tuple2(Str(1024), Double))",
           restype="ArrayOf(1, 16, Str(1024))")]
 #[param(name="sol", doc="start-of-line", datatype="Str(8)", readonly=true,
         default="\"\"", swonly=true, visibility="none")]
@@ -111,62 +104,10 @@ impl Module for TcpComm {
     }
 }
 
-struct SPError(serialport::Error);
+impl HasComm for TcpComm {
+    type IO = TcpStream;
 
-impl From<SPError> for Error {
-    fn from(e: SPError) -> Error {
-        Error::comm_failed(std::error::Error::description(&e.0))
+    fn get_comm(&self) -> Result<&CommClient<Self::IO>> {
+        self.comm.as_ref().ok_or_else(|| Error::comm_failed("connection not open"))
     }
-}
-
-impl TcpComm {
-    fn convert(&self, bytes: Result<Vec<u8>>) -> Result<String> {
-        bytes.map(|v| {
-            String::from_utf8(v)
-                .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
-        })
-    }
-
-    fn get_comm(&self) -> Result<&CommClient<TcpStream>> {
-        if let Some(ref comm) = self.comm {
-            Ok(comm)
-        } else {
-            Err(Error::comm_failed("connection not open"))
-        }
-    }
-
-    fn read_status(&mut self) -> Result<Status> {
-        // TODO
-        Ok((StatusConst::Idle, "idle".into()))
-    }
-
-    fn do_communicate(&self, arg: String) -> Result<String> {
-        self.convert(self.get_comm()?.communicate(arg.as_bytes()))
-    }
-
-    fn do_writeline(&self, arg: String) -> Result<()> {
-        self.get_comm()?.write(arg.as_bytes(), true).map(|_| ())
-    }
-
-    fn do_readline(&self, _: ()) -> Result<String> {
-        self.convert(self.get_comm()?.readline())
-    }
-
-    fn do_write(&self, arg: String) -> Result<()> {
-        self.get_comm()?.write(arg.as_bytes(), false).map(|_| ())
-    }
-
-    fn do_read(&self, _: ()) -> Result<String> {
-        self.convert(self.get_comm()?.read(u32::max_value()))
-    }
-
-    fn do_multi_communicate(&self, _req: Vec<CommElement>) -> Result<Vec<String>> {
-        panic!("multi_communicate is not yet implemented");
-    }
-
-    fn update_sol(&mut self, _: String) -> Result<()> { Ok(()) }
-    fn update_eol(&mut self, _: String) -> Result<()> { Ok(()) }
-    fn update_timeout(&mut self, _: f64) -> Result<()> { Ok(()) }
-    fn update_host(&mut self, _: String) -> Result<()> { Ok(()) }
-    fn update_port(&mut self, _: i64) -> Result<()> { Ok(()) }
 }

@@ -351,16 +351,24 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                         #def.into()
                     };
                     self.cache.#name_id.set(value);
-                    self.#update_method(self.cache.#name_id.cloned())?;
                 });
+                if !readonly {
+                    init_params_swonly.push(quote! {
+                        self.#update_method(self.cache.#name_id.cloned())?;
+                    })
+                }
             },
             (true, _, _) => {
                 // must be mandatory
                 init_params_swonly.push(quote! {
                     let value = #type_static.from_json(&self.config().parameters[#name])?;
                     self.cache.#name_id.set(value);
-                    self.#update_method(self.cache.#name_id.cloned())?;
                 });
+                if !readonly {
+                    init_params_swonly.push(quote! {
+                        self.#update_method(self.cache.#name_id.cloned())?;
+                    })
+                }
             },
             (false, false, Some(def)) => {
                 init_params_write.push(quote! {

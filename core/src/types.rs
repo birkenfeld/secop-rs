@@ -359,6 +359,8 @@ macro_rules! typedesc_type {
     (Str($_:expr)) => (Str);
     (Enum($_:expr)) => (Enum);
     (ArrayOf($_:expr, $__:expr, $($tp:tt)*)) => (ArrayOf<typedesc_type!($($tp)*)>);
+    (Tuple2($tp1a:tt $( ( $($tp1b:tt)* ) )*, $($tp2:tt)*)) => (
+        Tuple2<typedesc_type![$tp1a $( ($($tp1b)*) )*], typedesc_type!($($tp2)*)>);
     // For "simple" (unit-struct) types, which includes user-derived types.
     ($stalone_type:ty) => ($stalone_type);
 }

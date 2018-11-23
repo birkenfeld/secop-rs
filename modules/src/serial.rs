@@ -30,17 +30,9 @@ use serialport::{self, SerialPort};
 use secop_core::errors::{Error, Result};
 use secop_core::module::{Module, ModInternals};
 use secop_core::types::*;
-use secop_derive::{ModuleBase, TypeDesc};
+use secop_derive::ModuleBase;
 
-use crate::support::comm::{CommClient, CommThread};
-
-#[derive(TypeDesc)]
-struct CommElement {
-    #[datatype="Str(1024)"]
-    message: String,
-    #[datatype="Double"]
-    waittime: f64,
-}
+use crate::support::comm::{CommClient, CommThread, HasComm};
 
 
 #[derive(ModuleBase)]
@@ -56,7 +48,7 @@ struct CommElement {
 #[command(name="write", doc="write raw string",
           argtype="Str(1024)", restype="Null")]
 #[command(name="multi_communicate", doc="do multiple communicate cycles",
-          argtype="ArrayOf(1, 16, CommElementType)",
+          argtype="ArrayOf(1, 16, Tuple2(Str(1024), Double))",
           restype="ArrayOf(1, 16, Str(1024))")]
 #[param(name="sol", doc="start-of-line", datatype="Str(8)", readonly=true,
         default="\"\"", swonly=true, visibility="none")]
@@ -89,11 +81,13 @@ impl Module for SerialComm {
 
         let connect = move || -> Result<(Box<SerialPort>, Box<SerialPort>)> {
             info!("opening {}...", devfile);
-            let mut port = serialport::open(&devfile).map_err(SPError)?;
+            let mut port = serialport::open(&devfile).map_err(
+                |e| Error::comm_failed(e.to_string()))?;
             let mut settings = port.settings();
             settings.baud_rate = baudrate;
             port.set_all(&settings).unwrap();
-            let mut rport = serialport::open(&devfile).map_err(SPError)?;
+            let mut rport = serialport::open(&devfile).map_err(
+                |e| Error::comm_failed(e.to_string()))?;
             rport.set_all(&settings).unwrap();
             Ok((rport, port))
         };
@@ -113,62 +107,10 @@ impl Module for SerialComm {
     }
 }
 
-struct SPError(serialport::Error);
+impl HasComm for SerialComm {
+    type IO = Box<SerialPort>;
 
-impl From<SPError> for Error {
-    fn from(e: SPError) -> Error {
-        Error::comm_failed(std::error::Error::description(&e.0))
+    fn get_comm(&self) -> Result<&CommClient<Self::IO>> {
+        self.comm.as_ref().ok_or_else(|| Error::comm_failed("connection not open"))
     }
-}
-
-impl SerialComm {
-    fn convert(&self, bytes: Result<Vec<u8>>) -> Result<String> {
-        bytes.map(|v| {
-            String::from_utf8(v)
-                .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
-        })
-    }
-
-    fn get_comm(&self) -> Result<&CommClient<Box<SerialPort>>> {
-        if let Some(ref comm) = self.comm {
-            Ok(comm)
-        } else {
-            Err(Error::comm_failed("connection not open"))
-        }
-    }
-
-    fn read_status(&mut self) -> Result<Status> {
-        // TODO
-        Ok((StatusConst::Idle, "idle".into()))
-    }
-
-    fn do_communicate(&self, arg: String) -> Result<String> {
-        self.convert(self.get_comm()?.communicate(arg.as_bytes()))
-    }
-
-    fn do_writeline(&self, arg: String) -> Result<()> {
-        self.get_comm()?.write(arg.as_bytes(), true).map(|_| ())
-    }
-
-    fn do_readline(&self, _: ()) -> Result<String> {
-        self.convert(self.get_comm()?.readline())
-    }
-
-    fn do_write(&self, arg: String) -> Result<()> {
-        self.get_comm()?.write(arg.as_bytes(), false).map(|_| ())
-    }
-
-    fn do_read(&self, _: ()) -> Result<String> {
-        self.convert(self.get_comm()?.read(u32::max_value()))
-    }
-
-    fn do_multi_communicate(&self, _req: Vec<CommElement>) -> Result<Vec<String>> {
-        panic!("multi_communicate is not yet implemented");
-    }
-
-    fn update_sol(&mut self, _: String) -> Result<()> { Ok(()) }
-    fn update_eol(&mut self, _: String) -> Result<()> { Ok(()) }
-    fn update_timeout(&mut self, _: f64) -> Result<()> { Ok(()) }
-    fn update_devfile(&mut self, _: String) -> Result<()> { Ok(()) }
-    fn update_baudrate(&mut self, _: i64) -> Result<()> { Ok(()) }
 }
