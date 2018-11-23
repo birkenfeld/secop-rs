@@ -62,8 +62,8 @@ impl<W: Write> CommClient<W> {
         let end = buffer
             .windows(neol)
             .position(|ch| ch == &self.eol[..])
-            .unwrap() + neol;
-        Ok(buffer.drain(0..end).collect())
+            .unwrap();
+        Ok(buffer.drain(0..end + neol).take(end).collect())
     }
 
     pub fn read(&self, max: u32) -> Result<Vec<u8>> {
