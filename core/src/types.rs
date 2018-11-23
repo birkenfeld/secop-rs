@@ -206,33 +206,33 @@ impl TypeDesc for Str {
 }
 
 
-pub struct ArrayOf<T: TypeDesc>(pub T, pub usize, pub usize);
+pub struct ArrayOf<T: TypeDesc>(pub usize, pub usize, pub T);
 
 impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
     type Repr = Vec<T::Repr>;
     fn type_json(&self) -> Value {
-        json!(["array", self.0.type_json(), 0, self.1])
+        json!(["array", self.2.type_json(), self.0, self.1])
     }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if val.len() >= self.1 && val.len() <= self.2 {
+        if val.len() >= self.0 && val.len() <= self.1 {
             let v: Result<Vec<_>, _> = val.into_iter().enumerate().map(|(i, v)| {
-                self.0.to_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
+                self.2.to_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
             }).collect();
             Ok(Value::Array(v?))
         } else {
             Err(Error::bad_value(format!("expected vector with length between {} and {}",
-                                         self.1, self.2)))
+                                         self.0, self.1)))
         }
     }
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         match val.as_array() {
-            Some(arr) if arr.len() >= self.1 && arr.len() <= self.2 => {
+            Some(arr) if arr.len() >= self.0 && arr.len() <= self.1 => {
                 arr.iter().enumerate().map(|(i, v)| {
-                    self.0.from_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
+                    self.2.from_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
                 }).collect()
             }
             _ => Err(Error::bad_value(format!("expected array with length between {} and {}",
-                                              self.1, self.2)))
+                                              self.0, self.1)))
         }
     }
 }
@@ -358,7 +358,7 @@ macro_rules! typedesc_type {
     (Blob($_:expr)) => (Blob);
     (Str($_:expr)) => (Str);
     (Enum($_:expr)) => (Enum);
-    (ArrayOf($($tp:tt)*, $_:expr, $__:expr)) => (ArrayOf<typedesc_type!($($tp)*)>);
+    (ArrayOf($_:expr, $__:expr, $($tp:tt)*)) => (ArrayOf<typedesc_type!($($tp)*)>);
     // For "simple" (unit-struct) types, which includes user-derived types.
     ($stalone_type:ty) => ($stalone_type);
 }

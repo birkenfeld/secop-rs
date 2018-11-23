@@ -20,11 +20,11 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! Module to communicate via a serial port.
+//! Module to communicate via a TCP connection.
 
+use std::net::TcpStream;
 use std::time::Duration;
 use log::*;
-use serialport::{self, SerialPort};
 
 // These should later be put into a "core" or "prelude" type export module.
 use secop_core::errors::{Error, Result};
@@ -64,38 +64,36 @@ struct CommElement {
         default="\"\\n\"", swonly=true, visibility="none")]
 #[param(name="timeout", doc="comm timeout", datatype="DoubleFrom(0.)", readonly=true,
         default="2.0", swonly=true, visibility="none")]
-#[param(name="devfile", doc="device file name", datatype="Str(128)", readonly=true,
+#[param(name="host", doc="host to connect to", datatype="Str(1024)", readonly=true,
         mandatory=true, swonly=true, visibility="none")]
-#[param(name="baudrate", doc="baud rate", datatype="Int(1200, 230400)", readonly=true,
-        default="9600", swonly=true, visibility="none")]
-pub struct SerialComm {
+#[param(name="port", doc="port to connect to", datatype="Int(1, 65535)", readonly=true,
+        mandatory=true, swonly=true, visibility="none")]
+pub struct TcpComm {
     internals: ModInternals,
-    cache: SerialCommParamCache,
-    comm: Option<CommClient<Box<SerialPort>>>,
+    cache: TcpCommParamCache,
+    comm: Option<CommClient<TcpStream>>,
 }
 
-impl Module for SerialComm {
+impl Module for TcpComm {
     fn create(internals: ModInternals) -> Result<Self> {
-        Ok(SerialComm { internals, cache: Default::default(), comm: None })
+        Ok(TcpComm { internals, cache: Default::default(), comm: None })
     }
 
     fn setup(&mut self) -> Result<()> {
-        let devfile = self.cache.devfile.cloned();
-        if devfile.is_empty() {
-            return Err(Error::config("need a devfile configured"));
+        if self.cache.host.as_ref().is_empty() {
+            return Err(Error::config("need a host configured"));
         }
+        let address = format!("{}:{}", self.cache.host.as_ref(), self.cache.port.as_ref());
         let timeout = Duration::from_millis((self.cache.timeout.as_ref() * 1000.) as u64);
-        let baudrate = self.cache.baudrate.cloned() as u32;
 
-        let connect = move || -> Result<(Box<SerialPort>, Box<SerialPort>)> {
-            info!("opening {}...", devfile);
-            let mut port = serialport::open(&devfile).map_err(SPError)?;
-            let mut settings = port.settings();
-            settings.baud_rate = baudrate;
-            port.set_all(&settings).unwrap();
-            let mut rport = serialport::open(&devfile).map_err(SPError)?;
-            rport.set_all(&settings).unwrap();
-            Ok((rport, port))
+        let connect = move || -> Result<(TcpStream, TcpStream)> {
+            info!("connecting to {}...", address);
+            let wstream = TcpStream::connect(address.as_str())?;
+            wstream.set_write_timeout(Some(timeout))?;
+            wstream.set_nodelay(true)?;
+            let rstream = wstream.try_clone()?;
+            info!("connection established to {}", address);
+            Ok((rstream, wstream))
         };
 
         self.comm = Some(CommThread::spawn(
@@ -121,7 +119,7 @@ impl From<SPError> for Error {
     }
 }
 
-impl SerialComm {
+impl TcpComm {
     fn convert(&self, bytes: Result<Vec<u8>>) -> Result<String> {
         bytes.map(|v| {
             String::from_utf8(v)
@@ -129,7 +127,7 @@ impl SerialComm {
         })
     }
 
-    fn get_comm(&self) -> Result<&CommClient<Box<SerialPort>>> {
+    fn get_comm(&self) -> Result<&CommClient<TcpStream>> {
         if let Some(ref comm) = self.comm {
             Ok(comm)
         } else {
@@ -169,6 +167,6 @@ impl SerialComm {
     fn update_sol(&mut self, _: String) -> Result<()> { Ok(()) }
     fn update_eol(&mut self, _: String) -> Result<()> { Ok(()) }
     fn update_timeout(&mut self, _: f64) -> Result<()> { Ok(()) }
-    fn update_devfile(&mut self, _: String) -> Result<()> { Ok(()) }
-    fn update_baudrate(&mut self, _: i64) -> Result<()> { Ok(()) }
+    fn update_host(&mut self, _: String) -> Result<()> { Ok(()) }
+    fn update_port(&mut self, _: i64) -> Result<()> { Ok(()) }
 }

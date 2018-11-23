@@ -104,6 +104,7 @@ impl<T: PartialEq + Clone> CachedParam<T> {
 /// Part of the Module trait to be implemented by user.
 pub trait Module : ModuleBase {
     fn create(internals: ModInternals) -> Result<Self, Error> where Self: Sized;
+    fn setup(&mut self) -> Result<(), Error>;
     fn teardown(&mut self);
 }
 
@@ -169,7 +170,7 @@ pub trait ModuleBase {
     /// * Initialize the module parameters
     /// * Handle incoming requests
     /// * Poll parameters periodically
-    fn run(mut self) where Self: Sized {
+    fn run(mut self) where Self: Sized + Module {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
         // Tell the dispatcher how to describe ourselves.  If the visibility is
@@ -184,6 +185,9 @@ pub trait ModuleBase {
             warn!("error initializing params: {}", e);
             // TODO: and now?
         }
+
+        // TODO: error handling?
+        self.setup().expect("setup failed");
 
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;

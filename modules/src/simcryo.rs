@@ -282,10 +282,13 @@ impl Module for SimCryo {
                                heater: 0.0, ramp: 0.0, ramping: false,
                                target: 0.0, setpoint: 0.0, stopflag: false };
         let vars = Arc::new(Mutex::new(vars));
-        let sim = CryoSimulator { vars: Arc::clone(&vars) };
-        let cache = SimCryoParamCache::default();
+        Ok(Self { internals, vars, cache: Default::default() })
+    }
+
+    fn setup(&mut self) -> Result<()> {
+        let sim = CryoSimulator { vars: Arc::clone(&self.vars) };
         thread::spawn(move || sim.run());
-        Ok(Self { internals, cache, vars })
+        Ok(())
     }
 
     fn teardown(&mut self) {

@@ -348,19 +348,26 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                     let value = if let Some(val) = self.config().parameters.get(#name) {
                         #type_static.from_json(val)?
                     } else {
-                        #def
+                        #def.into()
                     };
                     self.cache.#name_id.set(value);
                     self.#update_method(self.cache.#name_id.cloned())?;
                 });
             },
-            (true, _, _) => unreachable!(),
+            (true, _, _) => {
+                // must be mandatory
+                init_params_swonly.push(quote! {
+                    let value = #type_static.from_json(&self.config().parameters[#name])?;
+                    self.cache.#name_id.set(value);
+                    self.#update_method(self.cache.#name_id.cloned())?;
+                });
+            },
             (false, false, Some(def)) => {
                 init_params_write.push(quote! {
                     let value = if let Some(val) = self.config().parameters.get(#name) {
                         val.clone()
                     } else {
-                        #type_static.to_json(#def)?
+                        #type_static.to_json(#def.into())?
                     };
                     // This will emit an update message, but since the server is starting
                     // up, we can assume it hasn't been activated yet.

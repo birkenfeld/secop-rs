@@ -73,6 +73,19 @@ impl Error {
         self
     }
 
+    pub fn into_msg(self, msg: String) -> Msg {
+        Msg::ErrMsg {
+            class: error::Error::description(&self).into(),
+            report: json!([msg, self.message, {}])
+        }
+    }
+
+    // Quick construction.
+
+    pub fn config(msg: impl Into<String>) -> Self {
+        Self { kind: ErrorKind::Config, message: msg.into() }
+    }
+
     pub fn protocol(msg: impl Into<String>) -> Self {
         Self { kind: ErrorKind::Protocol, message: msg.into() }
     }
@@ -89,11 +102,16 @@ impl Error {
         Self { kind: ErrorKind::NoSuchCommand, message: "".into() }
     }
 
-    pub fn into_msg(self, msg: String) -> Msg {
-        Msg::ErrMsg {
-            class: error::Error::description(&self).into(),
-            report: json!([msg, self.message, {}])
-        }
+    pub fn comm_failed(msg: impl Into<String>) -> Self {
+        Self { kind: ErrorKind::CommunicationFailed, message: msg.into() }
+    }
+}
+
+/// Allow quick conversion of io::Error to SECoP errors.
+// TODO: is comm_failed the right kind?
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::comm_failed(e.to_string())
     }
 }
 
