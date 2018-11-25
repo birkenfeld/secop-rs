@@ -247,10 +247,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         statics.push(quote! {
             static ref #type_static: typedesc_type!(#type_expr) = #type_expr;
         });
+        let type_repr = quote! { <typedesc_type!(#type_expr) as TypeDesc>::Repr };
 
         // Populate members of the parameter cache struct.
         param_cache.push(quote! {
-            #name_id: secop_core::module::CachedParam<<typedesc_type!(#type_expr) as TypeDesc>::Repr>,
+            #name_id: secop_core::module::CachedParam<#type_repr>,
         });
 
         // Generate trampolines for read and write of the parameter.  These
@@ -260,10 +261,9 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         let write_method = Ident::new(&format!("write_{}", name), Span::call_site());
         let update_method = Ident::new(&format!("update_{}", name), Span::call_site());
 
-        // TODO: catch and log errors
         par_read_arms.push(match swonly {
             false => quote! {
-                #name => {
+                #name => try {
                     let read_value = self.#read_method()?;
                     let (value, time, send) = self.cache.#name_id.update(read_value, &*#type_static)?;
                     if send {
@@ -273,22 +273,22 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 }
             },
             true => quote! {
-                #name => {
+                #name => try {
                     let value = #type_static.to_json(self.cache.#name_id.cloned())?;
                     (value, self.cache.#name_id.time())
                 }
             },
         });
-        // TODO: catch and log errors
+
         par_write_arms.push(match (swonly, readonly) {
             (false, false) => quote! {
-                #name => {
+                #name => try {
                     self.#write_method(#type_static.from_json(&value)?)?;
-                    self.read(#name)
+                    self.read(#name)?
                 }
             },
             (true, false) => quote! {
-                #name => {
+                #name => try {
                     // TODO: simplify?
                     let (value, time, send) =
                         self.cache.#name_id.update(#type_static.from_json(&value)?, &*#type_static)?;
@@ -296,7 +296,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                         self.send_update(#name, value.clone(), time);
                         self.#update_method(self.cache.#name_id.cloned())?;
                     }
-                    Ok(json!([value, {"t": time}]))
+                    json!([value, {"t": time}])
                 }
             },
             (_, true)  => quote! {
@@ -336,66 +336,26 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         // code, config file, hardware) and multiple ways of using them
         // (depending on whether the parameter is writable at runtime).
         //
-        // TODO: handle errors better, in particular, isolate failures and log
-        // them with the parameter name given.
-        //
         // TODO: check mandatory (where?)
         let def_expr = default.map(|def| syn::parse_str::<Expr>(&def).unwrap_or_else(
             |e| panic!("unparseable default value for param {}: {}", name, e)));
-        match (swonly, readonly, def_expr) {
-            (true, _, Some(def)) => {
-                init_params_swonly.push(quote! {
-                    let value = if let Some(val) = self.config().parameters.get(#name) {
-                        #type_static.from_json(val)?
-                    } else {
-                        #def.into()
-                    };
-                    self.cache.#name_id.set(value);
-                });
-                if !readonly {
-                    init_params_swonly.push(quote! {
-                        self.#update_method(self.cache.#name_id.cloned())?;
-                    })
-                }
-            },
-            (true, _, _) => {
-                // must be mandatory
-                init_params_swonly.push(quote! {
-                    let value = #type_static.from_json(&self.config().parameters[#name])?;
-                    self.cache.#name_id.set(value);
-                });
-                if !readonly {
-                    init_params_swonly.push(quote! {
-                        self.#update_method(self.cache.#name_id.cloned())?;
-                    })
-                }
-            },
-            (false, false, Some(def)) => {
-                init_params_write.push(quote! {
-                    let value = if let Some(val) = self.config().parameters.get(#name) {
-                        val.clone()
-                    } else {
-                        #type_static.to_json(#def.into())?
-                    };
-                    // This will emit an update message, but since the server is starting
-                    // up, we can assume it hasn't been activated yet.
-                    self.change(#name, value)?;
-                });
+        let def_option = def_expr.map_or(quote!(None::<fn() -> #type_repr>),
+                                         |expr| quote!(Some(|| #expr)));
+        let upd_closure = if swonly && !readonly {
+            quote! { |slf, v| slf.#update_method(v) }
+        } else {
+            quote! { |_, _| Ok(()) }
+        };
+        let init_stanza = quote! {
+            if let Err(e) = self.init_parameter(#name, |slf| &mut slf.cache.#name_id, &*#type_static,
+                                                #upd_closure, #swonly, #readonly, #def_option) {
+                return Err(e.amend(concat!("while initializing parameter ", #name)));
             }
-            (false, false, None) => {
-                init_params_write.push(quote! {
-                    if let Some(val) = self.config().parameters.get(#name) {
-                        self.change(#name, val.clone())?;
-                    } else {
-                        self.read(#name)?;
-                    }
-                });
-            }
-            (false, true, _) => {
-                init_params_read.push(quote! {
-                    self.read(#name)?;
-                });
-            }
+        };
+        match (swonly, readonly) {
+            (true, _) => init_params_swonly.push(init_stanza),
+            (false, false) => init_params_write.push(init_stanza),
+            (false, true) => init_params_read.push(init_stanza),
         }
 
         // Generate the parameter's entry in the descriptive data.  If the
@@ -437,12 +397,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             static ref #argtype_static: typedesc_type!(#argtype_expr) = #argtype_expr;
             static ref #restype_static: typedesc_type!(#restype_expr) = #restype_expr;
         });
-        // TODO: catch and log errors
         cmd_arms.push(quote! {
-            #name => {
+            #name => try {
                 let result_r = self.#do_method(#argtype_static.from_json(&arg)?)?;
                 let result = #restype_static.to_json(result_r)?;
-                Ok(json!([result, {"t": localtime()}]))
+                json!([result, {"t": localtime()}])
             }
         });
         if visibility != "none" {
@@ -495,25 +454,42 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
 
             fn read(&mut self, param: &str) -> Result<Value> {
-                let (value, time) = match param {
+                debug!("reading parameter {}", param);
+                let result = match param {
                     #( #par_read_arms, )*
-                    _ => return Err(Error::no_param())
+                    _ => Err(Error::no_param())
                 };
-                Ok(json!([value, {"t": time}]))
+                match result {
+                    Ok((value, time)) => Ok(json!([value, {"t": time}])),
+                    Err(e) => {
+                        error!("while reading parameter {}: {}", param, e);
+                        Err(e)
+                    }
+                }
             }
 
             fn change(&mut self, param: &str, value: Value) -> Result<Value> {
-                match param {
+                debug!("changing parameter {} to {}", param, value);
+                let result = match param {
                     #( #par_write_arms, )*
                     _ => Err(Error::no_param())
+                };
+                if let Err(ref e) = result {
+                    error!("while changing parameter {} to {}: {}", param, value, e);
                 }
+                result
             }
 
             fn command(&mut self, cmd: &str, arg: Value) -> Result<Value> {
-                match cmd {
+                debug!("executing command {} with arg {}", cmd, arg);
+                let result = match cmd {
                     #( #cmd_arms, )*
                     _ => Err(Error::no_command())
+                };
+                if let Err(ref e) = result {
+                    error!("while executing command {} with arg {}: {}", cmd, arg, e);
                 }
+                result
             }
 
             fn activate_updates(&mut self) -> Vec<Msg> {

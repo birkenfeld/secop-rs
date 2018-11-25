@@ -52,9 +52,9 @@ use crate::support::comm::{CommClient, CommThread, HasComm};
           argtype="ArrayOf(1, 16, Tuple2(Str(1024), Double))",
           restype="ArrayOf(1, 16, Str(1024))")]
 #[param(name="sol", doc="start-of-line", datatype="Str(8)", readonly=true,
-        default="\"\"", swonly=true, visibility="none")]
+        default="\"\".into()", swonly=true, visibility="none")]
 #[param(name="eol", doc="end-of-line", datatype="Str(8)", readonly=true,
-        default="\"\\n\"", swonly=true, visibility="none")]
+        default="\"\\n\".into()", swonly=true, visibility="none")]
 #[param(name="timeout", doc="comm timeout", datatype="DoubleFrom(0.)", readonly=true,
         default="2.0", swonly=true, visibility="none")]
 #[param(name="host", doc="host to connect to", datatype="Str(1024)", readonly=true,

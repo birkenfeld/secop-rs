@@ -143,6 +143,65 @@ pub trait ModuleBase {
     #[inline]
     fn config(&self) -> &ModuleConfig { &self.internals().config }
 
+    /// Determine and set the initial value for a parameter.
+    ///
+    /// This is quite complex since we have multiple sources (defaults from
+    /// code, config file, hardware) and multiple ways of using them (depending
+    /// on whether the parameter is writable at runtime).
+    fn init_parameter<T: Clone + PartialEq>(
+        &mut self, param: &str, cached: impl Fn(&mut Self) -> &mut CachedParam<T>,
+        partype: &impl TypeDesc<Repr=T>, update: impl Fn(&mut Self, T) -> Result<(), Error>,
+        swonly: bool, readonly: bool, default: Option<impl Fn() -> T>
+    ) -> Result<(), Error> {
+        if swonly {
+            let value = if let Some(def) = default {
+                if let Some(val) = self.config().parameters.get(param) {
+                    debug!("initializing value for param {} (from config)", param);
+                    partype.from_json(val)?
+                } else {
+                    debug!("initializing value for param {} (from default)", param);
+                    def().into()
+                }
+            } else {
+                // must be mandatory
+                debug!("initializing value for param {} (from config)", param);
+                partype.from_json(&self.config().parameters[param])?
+            };
+            cached(self).set(value);
+            if !readonly {
+                let value = cached(self).cloned();
+                update(self, value)?;
+            }
+        } else {
+            if !readonly {
+                if let Some(def) = default {
+                    let value = if let Some(val) = self.config().parameters.get(param) {
+                        debug!("initializing value for param {} (from config)", param);
+                        val.clone()
+                    } else {
+                        debug!("initializing value for param {} (from default)", param);
+                        partype.to_json(def().into())?
+                    };
+                    // This will emit an update message, but since the server is starting
+                    // up, we can assume it hasn't been activated yet.
+                    self.change(param, value)?;
+                } else {
+                    if let Some(val) = self.config().parameters.get(param) {
+                        debug!("initializing value for param {} (from config)", param);
+                        self.change(param, val.clone())?;
+                    } else {
+                        debug!("initializing value for param {} (from hardware)", param);
+                        self.read(param)?;
+                    }
+                }
+            } else {
+                debug!("initializing value for param {} (from hardware)", param);
+                self.read(param)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Send a general update message back to the dispatcher, which decides if
     /// and where to send it on.
     fn send_update(&self, param: &str, value: Value, tstamp: f64) {
@@ -173,6 +232,15 @@ pub trait ModuleBase {
     fn run(mut self) where Self: Sized + Module {
         mlzlog::set_thread_prefix(format!("[{}] ", self.name()));
 
+        // Do initialization steps.  On failure, we panic, which will be caught
+        // upstream and retries are scheduled accordingly.
+        if let Err(e) = self.init_params() {
+            panic!("error initializing params: {}", e);
+        }
+        if let Err(e) = self.setup() {
+            panic!("setup failed: {}", e);
+        }
+
         // Tell the dispatcher how to describe ourselves.  If the visibility is
         // "none", the module is assumed to be internal-use only.
         if self.config().visibility != Visibility::None {
@@ -180,14 +248,6 @@ pub trait ModuleBase {
                 (None, Msg::Describing { id: self.name().into(),
                                          structure: self.describe() })).unwrap();
         }
-
-        if let Err(e) = self.init_params() {
-            warn!("error initializing params: {}", e);
-            // TODO: and now?
-        }
-
-        // TODO: error handling?
-        self.setup().expect("setup failed");
 
         let mut poll_normal_counter = 0usize;
         let mut poll_busy_counter = 0usize;

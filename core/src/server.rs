@@ -240,7 +240,6 @@ impl Dispatcher {
                     }
                 },
                 recv(self.replies) -> res => if let Ok((hid, rep)) = res {
-                    debug!("got reply {:?} -> {}", hid, rep);
                     match hid {
                         None => match rep {
                             // update of descriptive data, isn't sent on to clients
@@ -254,6 +253,7 @@ impl Dispatcher {
                             }
                             // event update from a module, check where to send it
                             Update { ref module, .. } => {
+                                debug!("got {}", rep);
                                 for &hid in &self.active[module] {
                                     self.send_back(hid, &rep);
                                 }
@@ -279,7 +279,10 @@ impl Dispatcher {
                                     }
                                 }
                             }
-                            _ => self.send_back(hid, &rep)
+                            _ => {
+                                debug!("got reply {} for {}", rep, hid);
+                                self.send_back(hid, &rep)
+                            }
                         }
                     }
                 }
