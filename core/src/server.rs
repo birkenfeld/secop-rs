@@ -59,7 +59,7 @@ impl Server {
                     con_sender: Sender<(HId, Sender<String>)>,
                     req_sender: Sender<(HId, IncomingMsg)>)
     {
-        mlzlog::set_thread_prefix("TCP: ".into());
+        mlzlog::set_thread_prefix("TCP: ");
         info!("listener started");
         let mut next_hid = 0;
         while let Ok((stream, addr)) = tcp_sock.accept() {
@@ -151,7 +151,7 @@ impl Dispatcher {
     }
 
     fn run(mut self) {
-        mlzlog::set_thread_prefix("Dispatcher: ".into());
+        mlzlog::set_thread_prefix("Dispatcher: ");
 
         // > 0 if a global activation is currently being processed.
         let mut global_activate_remaining = 0;

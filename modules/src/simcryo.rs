@@ -69,7 +69,7 @@ impl CryoSimulator {
         const LOOPDELAY: f64 = 1.0;
         const MAXPOWER: f64 = 10.0;
 
-        mlzlog::set_thread_prefix("[CryoSim] ".into());
+        mlzlog::set_thread_prefix("[CryoSim] ");
 
         let mut last_t = localtime();
         let mut last_control = false;
