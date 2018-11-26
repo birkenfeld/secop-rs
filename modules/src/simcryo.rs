@@ -30,11 +30,8 @@ use log::*;
 use parking_lot::Mutex;
 use mlzutil::time::localtime;
 
-// These should later be put into a "core" or "prelude" type export module.
-use secop_core::errors::Result;
-use secop_core::module::{Module, ModuleBase, ModInternals};
-use secop_core::types::*;
-use secop_derive::{ModuleBase, TypeDesc};
+use secop_core::prelude::*;
+use secop_derive::*;
 
 #[derive(Default)]
 struct StateVars {

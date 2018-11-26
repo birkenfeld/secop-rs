@@ -30,7 +30,19 @@ pub mod module;
 pub mod errors;
 
 // Hack to allow the derives to derive stuff in this crate.
+// Does not need to be public for that.
 mod secop_core {
     pub use crate::errors;
     pub use crate::types;
+}
+
+/// Re-exports mostly everything needed for writing modules.
+pub mod prelude {
+    pub use crate::errors::{Error, ErrorKind, Result};
+    pub use crate::module::{ModInternals, ModuleBase, Module};
+    pub use crate::config::{ServerConfig, ModuleConfig};
+    pub use crate::types::{TypeDesc, Null, Bool, Double, DoubleFrom,
+                           DoubleRange, Int, Blob, Str, ArrayOf,
+                           Tuple2, Tuple3, Tuple4, Tuple5, Tuple6,
+                           Enum, StatusConst, StatusType, Status};
 }

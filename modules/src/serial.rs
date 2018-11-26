@@ -26,10 +26,7 @@ use std::time::Duration;
 use log::*;
 use serialport::{self, SerialPort};
 
-// These should later be put into a "core" or "prelude" type export module.
-use secop_core::errors::{Error, Result};
-use secop_core::module::{Module, ModInternals};
-use secop_core::types::*;
+use secop_core::prelude::*;
 use secop_derive::ModuleBase;
 
 use crate::support::comm::{CommClient, CommThread, HasComm};
