@@ -73,11 +73,11 @@ impl Module for TcpComm {
     }
 
     fn setup(&mut self) -> Result<()> {
-        if self.cache.host.as_ref().is_empty() {
+        if self.cache.host.is_empty() {
             return Err(Error::config("need a host configured"));
         }
-        let address = format!("{}:{}", self.cache.host.as_ref(), self.cache.port.as_ref());
-        let timeout = Duration::from_millis((self.cache.timeout.as_ref() * 1000.) as u64);
+        let address = format!("{}:{}", self.cache.host, self.cache.port);
+        let timeout = Duration::from_millis((*self.cache.timeout * 1000.) as u64);
 
         let connect = move || -> Result<(TcpStream, TcpStream)> {
             info!("connecting to {}...", address);
@@ -91,8 +91,8 @@ impl Module for TcpComm {
 
         self.comm = Some(CommThread::spawn(
             Box::new(connect),
-            self.cache.sol.as_ref().as_bytes(),
-            self.cache.eol.as_ref().as_bytes(),
+            self.cache.sol.as_bytes(),
+            self.cache.eol.as_bytes(),
             timeout,
         )?);
         Ok(())

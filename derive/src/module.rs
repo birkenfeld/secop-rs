@@ -274,7 +274,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             },
             true => quote! {
                 #name => try {
-                    let value = #type_static.to_json(self.cache.#name_id.cloned())?;
+                    let value = #type_static.to_json(self.cache.#name_id.clone())?;
                     (value, self.cache.#name_id.time())
                 }
             },
@@ -294,7 +294,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                         self.cache.#name_id.update(#type_static.from_json(&value)?, &*#type_static)?;
                     if send {
                         self.send_update(#name, value.clone(), time);
-                        self.#update_method(self.cache.#name_id.cloned())?;
+                        self.#update_method(self.cache.#name_id.clone())?;
                     }
                     json!([value, {"t": time}])
                 }
@@ -323,7 +323,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         // Generate entries for the "initial updates" phase of activation.
         activate_updates.push(quote! {
             // TODO: really ignore errors?
-            if let Ok(value) = #type_static.to_json(self.cache.#name_id.cloned()) {
+            if let Ok(value) = #type_static.to_json(self.cache.#name_id.clone()) {
                 res.push(Msg::Update { module: self.name().to_string(),
                                        param: #name.to_string(),
                                        data: json!([value, {"t": self.cache.#name_id.time()}]) });
@@ -510,14 +510,14 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             fn poll_normal(&mut self, n: usize) {
                 // The parameters with special busy-poll handling are not polled here,
                 // to avoid polling them twice at the almost same time.
-                if self.cache.status.as_ref().0 != StatusConst::Busy {
+                if self.cache.status.0 != StatusConst::Busy {
                     #( #poll_busy_params )*
                 }
                 #( #poll_other_params )*
             }
 
             fn poll_busy(&mut self, n: usize) {
-                if self.cache.status.as_ref().0 == StatusConst::Busy {
+                if self.cache.status.0 == StatusConst::Busy {
                     #( #poll_busy_params )*
                 }
             }

@@ -72,12 +72,12 @@ impl Module for SerialComm {
     }
 
     fn setup(&mut self) -> Result<()> {
-        let devfile = self.cache.devfile.cloned();
+        let devfile = self.cache.devfile.clone();
         if devfile.is_empty() {
             return Err(Error::config("need a devfile configured"));
         }
-        let timeout = Duration::from_millis((self.cache.timeout.as_ref() * 1000.) as u64);
-        let baudrate = self.cache.baudrate.cloned() as u32;
+        let timeout = Duration::from_millis((*self.cache.timeout * 1000.) as u64);
+        let baudrate = *self.cache.baudrate as u32;
 
         let connect = move || -> Result<(Box<SerialPort>, Box<SerialPort>)> {
             info!("opening {}...", devfile);
@@ -94,8 +94,8 @@ impl Module for SerialComm {
 
         self.comm = Some(CommThread::spawn(
             Box::new(connect),
-            self.cache.sol.as_ref().as_bytes(),
-            self.cache.eol.as_ref().as_bytes(),
+            self.cache.sol.as_bytes(),
+            self.cache.eol.as_bytes(),
             timeout,
         )?);
         Ok(())

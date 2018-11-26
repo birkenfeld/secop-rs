@@ -22,6 +22,8 @@
 //
 //! This module contains basic module functionality.
 
+use std::fmt;
+use std::ops::Deref;
 use std::time::{Duration, Instant};
 use log::*;
 use serde_json::{Value, json};
@@ -49,6 +51,9 @@ impl ModInternals {
     pub fn name(&self) -> &str {
         &self.name
     }
+    pub fn config(&self) -> &ModuleConfig {
+        &self.config
+    }
     pub fn class(&self) -> &str {
         &self.config.class
     }
@@ -62,6 +67,25 @@ impl ModInternals {
 pub struct CachedParam<T> {
     data: T,
     time: f64,
+}
+
+impl<T> Deref for CachedParam<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.data
+    }
+}
+
+impl<T> fmt::Display for CachedParam<T> where T: fmt::Display {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self.data)
+    }
+}
+
+impl<T> fmt::Debug for CachedParam<T> where T: fmt::Debug {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{:?}", self.data)
+    }
 }
 
 impl<T: PartialEq + Clone> CachedParam<T> {
@@ -86,14 +110,6 @@ impl<T: PartialEq + Clone> CachedParam<T> {
             false
         };
         Ok((td.to_json(value)?, self.time, is_update))
-    }
-
-    pub fn as_ref(&self) -> &T {
-        &self.data
-    }
-
-    pub fn cloned(&self) -> T {
-        self.data.clone()
     }
 
     pub fn time(&self) -> f64 {
@@ -169,7 +185,7 @@ pub trait ModuleBase {
             };
             cached(self).set(value);
             if !readonly {
-                let value = cached(self).cloned();
+                let value = cached(self).clone();
                 update(self, value)?;
             }
         } else {
