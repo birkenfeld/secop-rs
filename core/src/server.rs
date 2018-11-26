@@ -59,8 +59,8 @@ pub type ConSender = Sender<(HandlerId, RepSender)>;
 pub type ConReceiver = Receiver<(HandlerId, RepSender)>;
 pub type ReqSender = Sender<(HandlerId, IncomingMsg)>;
 pub type ReqReceiver = Receiver<(HandlerId, IncomingMsg)>;
-pub type RepSender = Sender<String>;
-pub type RepReceiver = Receiver<String>;
+pub type RepSender = Sender<Msg>;
+pub type RepReceiver = Receiver<Msg>;
 pub type ModRepSender = Sender<(Option<HandlerId>, Msg)>;
 pub type ModRepReceiver = Receiver<(Option<HandlerId>, Msg)>;
 
@@ -161,9 +161,9 @@ struct Dispatcher {
 }
 
 impl Dispatcher {
-    fn send_back(&self, hid: HandlerId, msg: &Msg) {
+    fn send_back(&self, hid: HandlerId, msg: Msg) {
         if let Some(chan) = self.handlers.get(&hid) {
-            let _ = chan.send(format!("{}\n", msg));
+            let _ = chan.send(msg);
         }
     }
 
@@ -189,7 +189,7 @@ impl Dispatcher {
                             if let Some(chan) = self.modules.get(module) {
                                 chan.send((hid, req)).unwrap();
                             } else {
-                                self.send_back(hid, &Error::no_module().into_msg(req.0));
+                                self.send_back(hid, Error::no_module().into_msg(req.0));
                             }
                         }
                         Activate { ref module } => {
@@ -203,14 +203,14 @@ impl Dispatcher {
                                 if let Some(chan) = self.modules.get(module) {
                                     chan.send((hid, req)).unwrap();
                                 } else {
-                                    self.send_back(hid, &Error::no_module().into_msg(req.0));
+                                    self.send_back(hid, Error::no_module().into_msg(req.0));
                                     continue;
                                 }
                             } else {
                                 // this is a global activation
                                 if global_activate_remaining > 0 {
                                     // only one can be inflight
-                                    self.send_back(hid, &Error::protocol(
+                                    self.send_back(hid, Error::protocol(
                                         "already activating").into_msg(req.0));
                                     continue;
                                 }
@@ -228,7 +228,7 @@ impl Dispatcher {
                             if !module.is_empty() {
                                 // check if module exists
                                 if !self.modules.contains_key(&module) {
-                                    self.send_back(hid, &Error::no_module().into_msg(req.0));
+                                    self.send_back(hid, Error::no_module().into_msg(req.0));
                                     continue;
                                 }
                                 self.active.get_mut(&module).expect("always there").remove(&hid);
@@ -238,10 +238,10 @@ impl Dispatcher {
                                     self.active.get_mut(module).expect("always there").remove(&hid);
                                 }
                             }
-                            self.send_back(hid, &Inactive { module });
+                            self.send_back(hid, Inactive { module });
                         }
                         Describe => {
-                            self.send_back(hid, &Describing {
+                            self.send_back(hid, Describing {
                                 id: ".".into(),
                                 structure: self.descriptive.clone()
                             });
@@ -272,7 +272,7 @@ impl Dispatcher {
                             Update { ref module, .. } => {
                                 debug!("got {}", rep);
                                 for &hid in &self.active[module] {
-                                    self.send_back(hid, &rep);
+                                    self.send_back(hid, rep.clone());
                                 }
                             }
                             _ => ()
@@ -281,15 +281,15 @@ impl Dispatcher {
                         Some(hid) => match rep {
                             InitUpdates { module, updates } => {
                                 for msg in updates {
-                                    self.send_back(hid, &msg);
+                                    self.send_back(hid, msg);
                                 }
                                 if !module.is_empty() {
-                                    self.send_back(hid, &Active { module: module.clone() });
+                                    self.send_back(hid, Active { module: module.clone() });
                                     self.active.get_mut(&module).expect("always there").insert(hid);
                                 } else {
                                     global_activate_remaining -= 1;
                                     if global_activate_remaining == 0 {
-                                        self.send_back(hid, &Active { module: "".into() });
+                                        self.send_back(hid, Active { module: "".into() });
                                         for set in self.active.values_mut() {
                                             set.insert(hid);
                                         }
@@ -298,7 +298,7 @@ impl Dispatcher {
                             }
                             _ => {
                                 debug!("got reply {} for {}", rep, hid);
-                                self.send_back(hid, &rep)
+                                self.send_back(hid, rep)
                             }
                         }
                     }
@@ -337,18 +337,20 @@ impl Handler {
     /// Thread that sends back replies and events to the client.
     fn sender(name: &str, mut client: TcpStream, rep_receiver: RepReceiver) {
         mlzlog::set_thread_prefix(format!("[{}] ", name));
+        let mut client = std::io::BufWriter::new(client);
         for to_send in rep_receiver {
-            if let Err(err) = client.write_all(to_send.as_bytes()) {
+            if let Err(err) = write!(client, "{}\n", to_send) {
                 warn!("write error in sender: {}", err);
                 break;
             }
+            let _ = client.flush();
         }
         info!("sender quit");
     }
 
     /// Send a message back to the client.
     fn send_back(&self, msg: Msg) {
-        self.rep_sender.send(format!("{}\n", msg)).expect("sending to client failed");
+        self.rep_sender.send(msg).expect("sending to client failed");
     }
 
     /// Handle an incoming correctly-parsed message.
