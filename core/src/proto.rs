@@ -224,6 +224,12 @@ impl fmt::Display for Msg {
     }
 }
 
+impl IncomingMsg {
+    pub fn bare(msg: Msg) -> Self {
+        IncomingMsg(String::new(), msg)
+    }
+}
+
 impl fmt::Display for IncomingMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)

@@ -25,6 +25,7 @@
 pub mod types;
 pub mod proto;
 pub mod server;
+pub mod client;
 pub mod config;
 pub mod module;
 pub mod errors;
@@ -41,6 +42,7 @@ pub mod prelude {
     pub use crate::errors::{Error, ErrorKind, Result};
     pub use crate::module::{ModInternals, ModuleBase, Module};
     pub use crate::config::{ServerConfig, ModuleConfig};
+    pub use crate::client::Client;
     pub use crate::types::{TypeDesc, Null, Bool, Double, DoubleFrom,
                            DoubleRange, Int, Blob, Str, ArrayOf,
                            Tuple2, Tuple3, Tuple4, Tuple5, Tuple6,

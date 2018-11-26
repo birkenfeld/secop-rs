@@ -30,6 +30,7 @@ extern crate secop_core;
 mod simcryo;
 mod serial;
 mod tcp;
+mod toellner;
 
 pub(crate) mod support;
 
@@ -68,6 +69,7 @@ pub fn run_module(internals: ModInternals) -> Result<(), Box<StdError>> {
         "SimCryo" => inner_run::<simcryo::SimCryo>(internals),
         "SerialComm" => inner_run::<serial::SerialComm>(internals),
         "TcpComm" => inner_run::<tcp::TcpComm>(internals),
+        "ToellnerPS" => inner_run::<toellner::ToellnerPS>(internals),
         _ => return Err(format!("no such module class: {}", internals.class()).into())
     })
 }

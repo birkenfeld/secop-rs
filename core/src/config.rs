@@ -28,6 +28,8 @@ use serde_derive::{Serialize, Deserialize};
 use serde_json::Value;
 use toml;
 
+use crate::types::TypeDesc;
+
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -84,5 +86,15 @@ pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
         }
     }
 
+    // TODO: check presence of mandatory params
+
     Ok(obj)
+}
+
+
+// TODO: check if this is necessary vs. initialized parameters
+impl ModuleConfig {
+    pub fn extract_param<T: TypeDesc>(&self, param: &str, td: &T) -> Option<T::Repr> {
+        self.parameters.get(param).and_then(|v| td.from_json(v).ok())
+    }
 }

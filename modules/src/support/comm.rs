@@ -169,7 +169,7 @@ impl<R: Read + Send + 'static, W: Write + Send + 'static> CommThread<R, W> {
                         }
                     }
                     Err(e) => {
-                        println!("reader error: {}", e);
+                        error!("reader error: {}", e);
                         break;
                     }
                 }

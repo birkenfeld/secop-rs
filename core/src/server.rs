@@ -28,6 +28,7 @@ use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::num::NonZeroU64;
 use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use log::*;
 use memchr::memchr;
@@ -70,21 +71,25 @@ pub static CON_SENDER: Mutex<Option<ConSender>> = Mutex::new(None);
 /// Global sender for new requests to the dispatcher.
 pub static REQ_SENDER: Mutex<Option<ReqSender>> = Mutex::new(None);
 
+static NEXT_HID: AtomicUsize = AtomicUsize::new(1);
+
+pub fn next_handler_id() -> HandlerId {
+    NonZeroU64::new(NEXT_HID.fetch_add(1, Ordering::SeqCst) as u64).expect("is nonzero")
+}
+
 impl Server {
     /// Listen for connections on the TCP socket and spawn handlers for it.
     fn tcp_listener(tcp_sock: TcpListener) {
         mlzlog::set_thread_prefix("TCP: ");
         info!("listener started");
-        let mut next_hid = 0;
         let con_sender = CON_SENDER.lock().clone().expect("no server running?");
         while let Ok((stream, addr)) = tcp_sock.accept() {
-            next_hid += 1;
             info!("[{}] new client connected", addr);
             // create the handler and start its main thread
             let new_req_sender = REQ_SENDER.lock().clone().expect("no server running?");
             let (rep_sender, rep_receiver) = unbounded();
             let disp_rep_sender = rep_sender.clone();
-            let hid = NonZeroU64::new(next_hid).expect("is nonzero");
+            let hid = next_handler_id();
             con_sender.send((hid, disp_rep_sender)).unwrap();
             thread::spawn(move || Handler::new(hid, stream, addr,
                                                new_req_sender, rep_sender, rep_receiver).handle());
@@ -335,7 +340,7 @@ impl Handler {
     }
 
     /// Thread that sends back replies and events to the client.
-    fn sender(name: &str, mut client: TcpStream, rep_receiver: RepReceiver) {
+    fn sender(name: &str, client: TcpStream, rep_receiver: RepReceiver) {
         mlzlog::set_thread_prefix(format!("[{}] ", name));
         let mut client = std::io::BufWriter::new(client);
         for to_send in rep_receiver {
@@ -422,7 +427,7 @@ impl Handler {
                 break;
             }
         }
-        self.req_sender.send((self.hid, IncomingMsg("".into(), Quit))).unwrap();
+        self.req_sender.send((self.hid, IncomingMsg::bare(Quit))).unwrap();
         info!("handler is finished");
     }
 }

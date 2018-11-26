@@ -81,11 +81,11 @@ impl Module for SerialComm {
             let mut port = serialport::open(&devfile).map_err(
                 |e| Error::comm_failed(e.to_string()))?;
             let mut settings = port.settings();
+            // no intrinsic timeout
+            settings.timeout = Duration::from_secs(1_000_000_000);
             settings.baud_rate = baudrate;
             port.set_all(&settings).unwrap();
-            let mut rport = serialport::open(&devfile).map_err(
-                |e| Error::comm_failed(e.to_string()))?;
-            rport.set_all(&settings).unwrap();
+            let rport = port.try_clone().map_err(|e| Error::comm_failed(e.to_string()))?;
             Ok((rport, port))
         };
 
