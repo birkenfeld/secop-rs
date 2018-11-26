@@ -29,12 +29,12 @@ use log::*;
 use serde_json::{Value, json};
 use derive_new::new;
 use mlzutil::time::localtime;
-use crossbeam_channel::{tick, Sender, Receiver, select};
+use crossbeam_channel::{tick, Receiver, select};
 
 use crate::config::{ModuleConfig, Visibility};
 use crate::errors::Error;
-use crate::proto::{IncomingMsg, Msg};
-use crate::server::HId;
+use crate::proto::Msg;
+use crate::server::{ReqReceiver, ModRepSender};
 use crate::types::TypeDesc;
 
 /// Data that every module requires.
@@ -42,8 +42,8 @@ use crate::types::TypeDesc;
 pub struct ModInternals {
     name: String,
     config: ModuleConfig,
-    req_receiver: Receiver<(HId, IncomingMsg)>,
-    rep_sender: Sender<(Option<HId>, Msg)>,
+    req_receiver: ReqReceiver,
+    rep_sender: ModRepSender,
     poll_tickers: (Receiver<Instant>, Receiver<Instant>),
 }
 
@@ -57,7 +57,7 @@ impl ModInternals {
     pub fn class(&self) -> &str {
         &self.config.class
     }
-    pub fn req_receiver(&self) -> &Receiver<(HId, IncomingMsg)> {
+    pub fn req_receiver(&self) -> &ReqReceiver {
         &self.req_receiver
     }
 }

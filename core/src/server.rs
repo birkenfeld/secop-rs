@@ -36,6 +36,7 @@ use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver, select, tick};
 use serde_json::{Value, json};
 use mlzutil::time::localtime;
+use parking_lot::Mutex;
 
 use crate::config::ServerConfig;
 use crate::errors::Error;
@@ -45,28 +46,42 @@ use crate::proto::{IncomingMsg, Msg, Msg::*, IDENT_REPLY};
 pub const RECVBUF_LEN: usize = 4096;
 pub const MAX_MSG_LEN: usize = 1024*1024;
 
-/// Handler ID.  This is nonzero so that Option<HId> is the same size.
-pub type HId = NonZeroU64;
+/// Handler ID.  This is nonzero so that Option<HandlerId> is the same size.
+pub type HandlerId = NonZeroU64;
 
 #[derive(new)]
 pub struct Server {
     config: ServerConfig,
 }
 
+// Aliases for all the common channel types.
+pub type ConSender = Sender<(HandlerId, RepSender)>;
+pub type ConReceiver = Receiver<(HandlerId, RepSender)>;
+pub type ReqSender = Sender<(HandlerId, IncomingMsg)>;
+pub type ReqReceiver = Receiver<(HandlerId, IncomingMsg)>;
+pub type RepSender = Sender<String>;
+pub type RepReceiver = Receiver<String>;
+pub type ModRepSender = Sender<(Option<HandlerId>, Msg)>;
+pub type ModRepReceiver = Receiver<(Option<HandlerId>, Msg)>;
+
+/// Global sender for new connections to the server.
+pub static CON_SENDER: Mutex<Option<ConSender>> = Mutex::new(None);
+
+/// Global sender for new requests to the dispatcher.
+pub static REQ_SENDER: Mutex<Option<ReqSender>> = Mutex::new(None);
+
 impl Server {
     /// Listen for connections on the TCP socket and spawn handlers for it.
-    fn tcp_listener(tcp_sock: TcpListener,
-                    con_sender: Sender<(HId, Sender<String>)>,
-                    req_sender: Sender<(HId, IncomingMsg)>)
-    {
+    fn tcp_listener(tcp_sock: TcpListener) {
         mlzlog::set_thread_prefix("TCP: ");
         info!("listener started");
         let mut next_hid = 0;
+        let con_sender = CON_SENDER.lock().clone().expect("no server running?");
         while let Ok((stream, addr)) = tcp_sock.accept() {
             next_hid += 1;
             info!("[{}] new client connected", addr);
             // create the handler and start its main thread
-            let new_req_sender = req_sender.clone();
+            let new_req_sender = REQ_SENDER.lock().clone().expect("no server running?");
             let (rep_sender, rep_receiver) = unbounded();
             let disp_rep_sender = rep_sender.clone();
             let hid = NonZeroU64::new(next_hid).expect("is nonzero");
@@ -84,8 +99,10 @@ impl Server {
         // create a few channels we need for the dispatcher:
         // sending info about incoming connections to the dispatcher
         let (con_sender, con_receiver) = unbounded();
+        *CON_SENDER.lock() = Some(con_sender);
         // sending requests from all handlers to the dispatcher
         let (req_sender, req_receiver) = unbounded();
+        *REQ_SENDER.lock() = Some(req_sender);
         // sending replies from all modules to the dispatcher
         let (rep_sender, rep_receiver) = unbounded();
 
@@ -126,7 +143,7 @@ impl Server {
 
         // create the TCP socket and start its handler thread
         let tcp_sock = TcpListener::bind(addr)?;
-        thread::spawn(move || Server::tcp_listener(tcp_sock, con_sender, req_sender));
+        thread::spawn(move || Server::tcp_listener(tcp_sock));
         Ok(())
     }
 }
@@ -135,16 +152,16 @@ impl Server {
 /// all via channels.
 struct Dispatcher {
     descriptive: Value,
-    handlers: HashMap<HId, Sender<String>>,
-    active: HashMap<String, HashSet<HId>>,
-    modules: HashMap<String, Sender<(HId, IncomingMsg)>>,
-    connections: Receiver<(HId, Sender<String>)>,
-    requests: Receiver<(HId, IncomingMsg)>,
-    replies: Receiver<(Option<HId>, Msg)>,
+    handlers: HashMap<HandlerId, RepSender>,
+    active: HashMap<String, HashSet<HandlerId>>,
+    modules: HashMap<String, ReqSender>,
+    connections: ConReceiver,
+    requests: ReqReceiver,
+    replies: ModRepReceiver,
 }
 
 impl Dispatcher {
-    fn send_back(&self, hid: HId, msg: &Msg) {
+    fn send_back(&self, hid: HandlerId, msg: &Msg) {
         if let Some(chan) = self.handlers.get(&hid) {
             let _ = chan.send(format!("{}\n", msg));
         }
@@ -299,17 +316,16 @@ impl Dispatcher {
 pub struct Handler {
     client: TcpStream,
     /// Assigned handler ID.
-    hid: HId,
+    hid: HandlerId,
     /// Sender for incoming requests, to the dispatcher.
-    req_sender: Sender<(HId, IncomingMsg)>,
+    req_sender: ReqSender,
     /// Sender for outgoing replies, to the sender thread.
-    rep_sender: Sender<String>,
+    rep_sender: RepSender,
 }
 
 impl Handler {
-    pub fn new(hid: HId, client: TcpStream, addr: SocketAddr,
-               req_sender: Sender<(HId, IncomingMsg)>,
-               rep_sender: Sender<String>, rep_receiver: Receiver<String>) -> Handler {
+    pub fn new(hid: HandlerId, client: TcpStream, addr: SocketAddr, req_sender: ReqSender,
+               rep_sender: RepSender, rep_receiver: RepReceiver) -> Handler {
         // spawn a thread that handles sending replies and events back
         let send_client = client.try_clone().expect("could not clone socket");
         let thread_name = addr.to_string();
@@ -319,7 +335,7 @@ impl Handler {
     }
 
     /// Thread that sends back replies and events to the client.
-    fn sender(name: &str, mut client: TcpStream, rep_receiver: Receiver<String>) {
+    fn sender(name: &str, mut client: TcpStream, rep_receiver: RepReceiver) {
         mlzlog::set_thread_prefix(format!("[{}] ", name));
         for to_send in rep_receiver {
             if let Err(err) = client.write_all(to_send.as_bytes()) {
