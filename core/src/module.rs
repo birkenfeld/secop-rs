@@ -297,6 +297,8 @@ pub trait ModuleBase {
                     };
                     self.internals().rep_sender.send((Some(hid), rep)).unwrap();
                 },
+                // TODO: decide if polling "atomically" (i.e. all parameters at once)
+                // is ok, since it could delay client requests.
                 recv(self.internals().poll_tickers.0) -> _ => {
                     self.poll_normal(poll_normal_counter);
                     poll_normal_counter = poll_normal_counter.wrapping_add(1);
