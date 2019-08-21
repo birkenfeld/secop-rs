@@ -78,9 +78,8 @@
 //! ```
 
 use std::collections::HashSet;
-use syn::{Expr, Ident, spanned::Spanned};
-use proc_macro2::Span;
-use quote::{quote, quote_spanned};
+use syn::{Expr, spanned::Spanned};
+use quote::{quote, quote_spanned, format_ident};
 use darling::FromMeta;
 
 
@@ -159,7 +158,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
     let name = &input.ast().ident;
     let vis = &input.ast().vis;
-    let param_cache_name = Ident::new(&format!("{}ParamCache", name), Span::call_site());
+    let param_cache_name = format_ident!("{}ParamCache", name);
 
     // Parse parameter and command attributes on the main struct.
     for attr in &input.ast().attrs {
@@ -239,10 +238,10 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             }
         }
 
-        let name_id = Ident::new(&name, Span::call_site());
+        let name_id = format_ident!("{}", name);
         // The parameter metatype instances are in principle constant, but
         // cannot be `const`, so we use `lazy_static` instead.
-        let type_static = Ident::new(&format!("PAR_TYPE_{}", name), Span::call_site());
+        let type_static = format_ident!("PAR_TYPE_{}", name);
         let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
         statics.push(quote! {
             static ref #type_static: typedesc_type!(#type_expr) = #type_expr;
@@ -257,9 +256,9 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         // Generate trampolines for read and write of the parameter.  These
         // methods are expected to be present as inherent methods on the struct.
         // If forgotten, the errors should be pretty clear.
-        let read_method = Ident::new(&format!("read_{}", name), Span::call_site());
-        let write_method = Ident::new(&format!("write_{}", name), Span::call_site());
-        let update_method = Ident::new(&format!("update_{}", name), Span::call_site());
+        let read_method = format_ident!("read_{}", name);
+        let write_method = format_ident!("write_{}", name);
+        let update_method = format_ident!("update_{}", name);
 
         par_read_arms.push(match swonly {
             false => quote! {
@@ -388,11 +387,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
         }
 
-        let argtype_static = Ident::new(&format!("CMD_ARG_{}", name), Span::call_site());
+        let argtype_static = format_ident!("CMD_ARG_{}", name);
         let argtype_expr = syn::parse_str::<Expr>(&argtype).expect("unparseable datatype");
-        let restype_static = Ident::new(&format!("CMD_RES_{}", name), Span::call_site());
+        let restype_static = format_ident!("CMD_RES_{}", name);
         let restype_expr = syn::parse_str::<Expr>(&restype).expect("unparseable datatype");
-        let do_method = Ident::new(&format!("do_{}", name), Span::call_site());
+        let do_method = format_ident!("do_{}", name);
         statics.push(quote! {
             static ref #argtype_static: typedesc_type!(#argtype_expr) = #argtype_expr;
             static ref #restype_static: typedesc_type!(#restype_expr) = #restype_expr;

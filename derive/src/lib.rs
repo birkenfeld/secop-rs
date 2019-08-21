@@ -36,8 +36,6 @@
 //!   safe way to declare parameters and commands with enum and struct
 //!   datatypes.
 
-#![recursion_limit="256"]
-
 mod module;
 mod typedesc;
 

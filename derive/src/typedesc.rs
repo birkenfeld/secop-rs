@@ -86,9 +86,8 @@
 //! of this type to the internal methods.
 
 
-use syn::{Ident, Expr};
-use proc_macro2::Span;
-use quote::quote;
+use syn::Expr;
+use quote::{quote, format_ident};
 use darling::FromMeta;
 
 
@@ -107,8 +106,8 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
     // an enclosing scope where we can `use` things without leaking, and Rust does
     // not care that the actual impls are inside it.  Only the `struct` definition
     // itself must be outside.
-    let const_name = Ident::new(&format!("_DERIVE_TypeDesc_{}", name), Span::call_site());
-    let struct_name = Ident::new(&format!("{}Type", name), Span::call_site());
+    let const_name = format_ident!("_DERIVE_TypeDesc_{}", name);
+    let struct_name = format_ident!("{}Type", name);
 
     let mut statics = Vec::new();
     let mut member_to_json = Vec::new();
@@ -126,8 +125,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         // We need the metatype instance globally available somewhere.  Since
         // it cannot (currently) be constructed in a `const` context, it needs
         // to be a lazy static.
-        let dtype_static = Ident::new(&format!("STRUCT_FIELD_{}", ident_str),
-                                      Span::call_site());
+        let dtype_static = format_ident!("STRUCT_FIELD_{}", ident_str);
         // Find the `datatype` attribute on the field.  It must be present.
         let mut dtype = None;
         for attr in &binding.ast().attrs {
@@ -231,8 +229,8 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
 pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::TokenStream {
     let name = &input.ast().ident;
     let vis = &input.ast().vis;
-    let const_name = Ident::new(&format!("_DERIVE_TypeDesc_{}", name), Span::call_site());
-    let struct_name = Ident::new(&format!("{}Type", name), Span::call_site());
+    let const_name = format_ident!("_DERIVE_TypeDesc_{}", name);
+    let struct_name = format_ident!("{}Type", name);
 
     let mut descr_members = Vec::new();
     let mut str_arms = Vec::new();
