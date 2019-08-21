@@ -163,16 +163,16 @@ impl LocalClient {
 
 /// Client that accesses a module in some remote SEC node.
 pub struct RemoteClient {
-    conn: TcpStream,
+    _conn: TcpStream,
     modname: String,
 }
 
 impl RemoteClient {
-    pub fn new(host: &str, port: u16, modname: String) -> Result<Self> {
+    pub fn new(_host: &str, _port: u16, _modname: String) -> Result<Self> {
         Err(Error::config("remote client connection not yet implemented"))
     }
 
-    fn transact(&self, msg: Msg) -> Result<Msg> {
+    fn transact(&self, _msg: Msg) -> Result<Msg> {
         unimplemented!()
     }
 

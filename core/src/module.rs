@@ -204,7 +204,8 @@ pub trait ModuleBase {
                 } else {
                     if let Some(val) = self.config().parameters.get(param) {
                         debug!("initializing value for param {} (from config)", param);
-                        self.change(param, val.clone())?;
+                        let val = val.clone();
+                        self.change(param, val)?;
                     } else {
                         debug!("initializing value for param {} (from hardware)", param);
                         self.read(param)?;

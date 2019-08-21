@@ -98,8 +98,8 @@ impl Server {
 
     /// Main server function; start threads to accept clients on the listening
     /// socket, the dispatcher, and the individual modules.
-    pub fn start<F>(mut self, addr: &str, mod_runner: F) -> Result<(), Box<StdError>>
-        where F: Fn(ModInternals) -> Result<(), Box<StdError>>
+    pub fn start<F>(mut self, addr: &str, mod_runner: F) -> Result<(), Box<dyn StdError>>
+        where F: Fn(ModInternals) -> Result<(), Box<dyn StdError>>
     {
         // create a few channels we need for the dispatcher:
         // sending info about incoming connections to the dispatcher
@@ -416,7 +416,7 @@ impl Handler {
             let mut from = 0;
             while let Some(to) = memchr(b'\n', &buf[from..]) {
                 let line_str = String::from_utf8_lossy(&buf[from..from+to]);
-                let line_str = line_str.trim_right_matches('\r');
+                let line_str = line_str.trim_end_matches('\r');
                 self.process(line_str.to_owned());
                 from += to + 1;
             }

@@ -64,7 +64,7 @@ fn inner_run<T: Module>(internals: ModInternals) {
 
 
 /// Start the module's own thread.
-pub fn run_module(internals: ModInternals) -> Result<(), Box<StdError>> {
+pub fn run_module(internals: ModInternals) -> Result<(), Box<dyn StdError>> {
     Ok(match &*internals.class() {
         "SimCryo" => inner_run::<simcryo::SimCryo>(internals),
         "SerialComm" => inner_run::<serial::SerialComm>(internals),

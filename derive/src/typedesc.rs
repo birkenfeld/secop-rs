@@ -132,7 +132,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         let mut dtype = None;
         for attr in &binding.ast().attrs {
             if attr.path.segments[0].ident == "datatype" {
-                dtype = attr.interpret_meta();
+                dtype = attr.parse_meta().ok();
             }
         }
         let dtype = dtype.unwrap_or_else(
@@ -238,7 +238,7 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
     let mut str_arms = Vec::new();
     let mut int_arms = Vec::new();
 
-    let mut discr = -1;
+    let mut discr = -1i64;
     for variant in input.variants() {
         let ident = &variant.ast().ident;
         let ident_str = ident.to_string();
@@ -247,7 +247,7 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
         }
         if let Some((_, dis)) = variant.ast().discriminant {
             if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(i), .. }) = dis {
-                discr = i.value() as i64;
+                discr = i.base10_parse().unwrap();
             } else {
                 panic!("explicit enum discriminants can only be integer literals");
             }

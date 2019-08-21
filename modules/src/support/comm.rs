@@ -33,7 +33,7 @@ use parking_lot::{Condvar, Mutex, MutexGuard};
 use secop_core::errors::{Error, Result};
 use secop_core::types::{Status, StatusConst};
 
-pub type Connector<R, W> = Box<FnMut() -> Result<(R, W)> + Send + 'static>;
+pub type Connector<R, W> = Box<dyn FnMut() -> Result<(R, W)> + Send + 'static>;
 
 struct CommShared<W> {
     writer: Mutex<W>,

@@ -60,7 +60,7 @@ use crate::support::comm::{CommClient, CommThread, HasComm};
 pub struct SerialComm {
     internals: ModInternals,
     cache: SerialCommParamCache,
-    comm: Option<CommClient<Box<SerialPort>>>,
+    comm: Option<CommClient<Box<dyn SerialPort>>>,
 }
 
 impl Module for SerialComm {
@@ -76,7 +76,7 @@ impl Module for SerialComm {
         let timeout = Duration::from_millis((*self.cache.timeout * 1000.) as u64);
         let baudrate = *self.cache.baudrate as u32;
 
-        let connect = move || -> Result<(Box<SerialPort>, Box<SerialPort>)> {
+        let connect = move || -> Result<(Box<dyn SerialPort>, Box<dyn SerialPort>)> {
             info!("opening {}...", devfile);
             let mut port = serialport::open(&devfile).map_err(
                 |e| Error::comm_failed(e.to_string()))?;
@@ -105,7 +105,7 @@ impl Module for SerialComm {
 }
 
 impl HasComm for SerialComm {
-    type IO = Box<SerialPort>;
+    type IO = Box<dyn SerialPort>;
 
     fn get_comm(&self) -> Result<&CommClient<Self::IO>> {
         self.comm.as_ref().ok_or_else(|| Error::comm_failed("connection not open"))
