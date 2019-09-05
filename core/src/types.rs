@@ -23,7 +23,7 @@
 //
 //! SECoP data type definitions.
 
-use fxhash::FxHashMap as HashMap;
+use hashbrown::HashMap;
 use serde_json::{Value, json};
 use secop_derive::TypeDesc;
 

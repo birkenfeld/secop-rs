@@ -23,7 +23,7 @@
 //! Configuration file handling.
 
 use std::path::Path;
-use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use hashbrown::{HashMap, HashSet};
 use serde_derive::{Serialize, Deserialize};
 use serde_json::Value;
 use toml;
@@ -72,8 +72,8 @@ pub fn load_config(filename: impl AsRef<Path>) -> Result<ServerConfig, String> {
                                .map_or("unknown".into(), |s| s.to_string_lossy().into_owned());
 
     // Check module names and groups for lowercase-uniqueness.
-    let mut lc_names = HashSet::default();
-    let mut lc_groups = HashSet::default();
+    let mut lc_names = HashSet::new();
+    let mut lc_groups = HashSet::new();
     for modcfg in obj.modules.values() {
         if let Some(group) = modcfg.group.as_ref() {
             lc_groups.insert(group.to_string());

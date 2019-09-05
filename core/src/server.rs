@@ -33,7 +33,7 @@ use std::thread;
 use log::*;
 use memchr::memchr;
 use derive_new::new;
-use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use hashbrown::{HashMap, HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver, select, tick};
 use serde_json::{Value, json};
 use mlzutil::time::localtime;
@@ -112,8 +112,8 @@ impl Server {
         let (rep_sender, rep_receiver) = unbounded();
 
         // create the modules
-        let mut active_sets = HashMap::default();
-        let mut mod_senders = HashMap::default();
+        let mut active_sets = HashMap::new();
+        let mut mod_senders = HashMap::new();
 
         for (name, modcfg) in self.config.modules.drain() {
             // channel to send requests to the module
@@ -122,7 +122,7 @@ impl Server {
             let mod_rep_sender = rep_sender.clone();
             let tickers = (tick(Duration::from_secs(1)), tick(Duration::from_secs(1)));
             let int = ModInternals::new(name.clone(), modcfg, mod_receiver, mod_rep_sender, tickers);
-            active_sets.insert(name.clone(), HashSet::default());
+            active_sets.insert(name.clone(), HashSet::new());
             mod_senders.insert(name, mod_sender);
             mod_runner(int)?;
         }
@@ -138,7 +138,7 @@ impl Server {
         let dispatcher = Dispatcher {
             descriptive: descriptive,
             active: active_sets,
-            handlers: HashMap::default(),
+            handlers: HashMap::new(),
             modules: mod_senders,
             connections: con_receiver,
             requests: req_receiver,

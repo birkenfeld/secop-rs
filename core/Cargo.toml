@@ -11,7 +11,6 @@ url = "2.1"
 time = "0.1"
 toml = "0.5"
 base64 = "0.10"
-fxhash = "0.2"
 regex = "1.0"
 memchr = "2.1"
 mlzlog = "0.5"
@@ -22,6 +21,7 @@ serde_derive = "1.0"
 lazy_static = "1.2"
 derive-new = "0.5"
 crossbeam-channel = "0.3"
+hashbrown = { version = "0.6", features = ["serde"] }
 parking_lot = { version = "0.9", features = ["nightly"] }
 
 [dependencies.secop-derive]
