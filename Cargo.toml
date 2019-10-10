@@ -2,18 +2,19 @@
 
 [package]
 name = "secop"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
            "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
 edition = "2018"
 
 [dependencies]
-log = "0.4"
-clap = "2.32"
-mlzlog = "0.5"
-mlzutil = "0.1"
-daemonize = "0.4"
-signal-hook = "0.1"
+log = "0.4.8"
+clap = "2.33.0"
+mlzlog = "0.5.2"
+mlzutil = "0.2.0"
+daemonize = "0.4.1"
+signal-hook = "0.1.10"
+structopt = "0.3.2"
 
 [dependencies.secop-core]
 path = "core"

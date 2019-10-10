@@ -23,58 +23,40 @@
 //! The main entry point for the server executable.
 
 use log::*;
-use clap::{clap_app, crate_version};
 use mlzutil::fs as fsutil;
+use structopt::{clap, StructOpt};
 
 use secop_core::config;
 use secop_core::server::Server;
 
 
-fn main() {
-    let args = clap_app!(("secop-rs") =>
-        (version: crate_version!())
-        (author: "Georg Brandl, Enrico Faulhaber")
-        (about: "A generic SECoP server.")
-        (@setting DeriveDisplayOrder)
-        (@setting UnifiedHelpMessage)
-        (@arg verbose: -v "Debug logging output?")
-        (@arg bind: --bind [ADDR] default_value("0.0.0.0:10767") "Bind address (host:port)")
-        (@arg log: --log [LOGPATH] default_value("log") "Logging path")
-        (@arg pid: --pid [PIDPATH] default_value("pid") "PID path")
-        (@arg daemon: -d "Daemonize?")
-        (@arg user: --user [USER] "User name for daemon")
-        (@arg group: --group [GROUP] "Group name for daemon")
-        (@arg config: +required "Configuration file name to load")
-    ).get_matches();
+#[derive(StructOpt)]
+#[structopt(setting = clap::AppSettings::UnifiedHelpMessage)]
+struct Options {
+    #[structopt(short="v", long="verbose", help="Debug logging output?")]
+    verbose: bool,
+    #[structopt(long="log", help="Logging path (if not given, log to journal)")]
+    log: Option<String>,
+    #[structopt(long="bind", help="Bind address (host:port)", default_value="0.0.0.0:10767")]
+    bind: String,
+    #[structopt(help="Configuration file name to load")]
+    config: String,
+}
 
-    let log_path = fsutil::abspath(args.value_of("log").expect(""));
-    let pid_path = fsutil::abspath(args.value_of("pid").expect(""));
-    if args.is_present("daemon") {
-        let mut daemon = daemonize::Daemonize::new();
-        if let Some(user) = args.value_of("user") {
-            daemon = daemon.user(user);
-        }
-        if let Some(group) = args.value_of("group") {
-            daemon = daemon.group(group);
-        }
-        if let Err(err) = daemon.start() {
-            eprintln!("could not daemonize process: {}", err);
-        }
-    }
+
+fn main() {
+    let opts = Options::from_args();
+
+    let log_path = opts.log.as_ref().map(|l| fsutil::abspath(l));
+    let log_console = log_path.is_none();
 
     // handle SIGINT and SIGTERM
     let signals = signal_hook::iterator::Signals::new(
         &[signal_hook::SIGINT, signal_hook::SIGTERM]).expect("signal register failed");
 
-    let cfgname = args.value_of("config").expect("is required");
-
-    if let Err(err) = mlzlog::init(Some(log_path), cfgname, false,
-                                   args.is_present("verbose"),
-                                   !args.is_present("daemon")) {
+    if let Err(err) = mlzlog::init(log_path, &opts.config, false,
+                                   opts.verbose, log_console) {
         eprintln!("could not initialize logging: {}", err);
-    }
-    if let Err(err) = fsutil::write_pidfile(&pid_path, cfgname) {
-        error!("could not write PID file: {}", err);
     }
 
     // set a panic hook to log panics into the logfile
@@ -97,13 +79,12 @@ fn main() {
     }));
 
     // load the config and run!
-    match config::load_config(cfgname) {
-        Err(err) => error!("could not parse config file {}: {}", cfgname, err),
+    match config::load_config(&opts.config) {
+        Err(err) => error!("could not parse config file {}: {}", opts.config, err),
         Ok(cfg)  => {
             let server = Server::new(cfg);
-            let bind_addr = args.value_of("bind").expect("");
-            info!("starting server on {}...", bind_addr);
-            if let Err(err) = server.start(bind_addr, secop_modules::run_module) {
+            info!("starting server on {}...", opts.bind);
+            if let Err(err) = server.start(&opts.bind, secop_modules::run_module) {
                 error!("could not initialize server: {}", err);
             } else {
                 // server is running; wait for a signal to finish
@@ -113,5 +94,4 @@ fn main() {
     }
 
     info!("quitting...");
-    fsutil::remove_pidfile(pid_path, cfgname);
 }

@@ -6,15 +6,15 @@ authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
 edition = "2018"
 
 [dependencies]
-log = "0.4"
-mlzlog = "0.5"
-mlzutil = "0.1"
-serde_json = "1.0"
-lazy_static = "1.2"
-parking_lot = "0.9"
+log = "0.4.8"
+mlzlog = "0.5.2"
+mlzutil = "0.2.0"
+serde_json = "1.0.41"
+lazy_static = "1.4.0"
+parking_lot = "0.9.0"
 
 # Individual device dependencies.
-serialport = "3.1"
+serialport = "3.3.0"
 
 [dependencies.secop-core]
 path = "../core"
