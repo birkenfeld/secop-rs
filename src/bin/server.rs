@@ -51,11 +51,16 @@ fn main() {
     let log_console = log_path.is_none();
 
     // handle SIGINT and SIGTERM
-    let signals = signal_hook::iterator::Signals::new(
-        &[signal_hook::SIGINT, signal_hook::SIGTERM]).expect("signal register failed");
+    let mut signals = signal_hook::iterator::Signals::new(
+        &[signal_hook::consts::signal::SIGINT,
+          signal_hook::consts::signal::SIGTERM]).expect("signal register failed");
 
-    if let Err(err) = mlzlog::init(log_path, &opts.config, false,
-                                   opts.verbose, log_console) {
+    if let Err(err) = mlzlog::init(log_path, "", mlzlog::Settings {
+        show_appname: false,
+        debug: opts.verbose,
+        use_stdout: log_console,
+        .. Default::default()
+    }) {
         eprintln!("could not initialize logging: {}", err);
     }
 

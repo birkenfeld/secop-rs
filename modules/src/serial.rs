@@ -78,13 +78,11 @@ impl Module for SerialComm {
 
         let connect = move || -> Result<(Box<dyn SerialPort>, Box<dyn SerialPort>)> {
             info!("opening {}...", devfile);
-            let mut port = serialport::open(&devfile).map_err(
-                |e| Error::comm_failed(e.to_string()))?;
-            let mut settings = port.settings();
-            // no intrinsic timeout
-            settings.timeout = Duration::from_secs(1_000_000_000);
-            settings.baud_rate = baudrate;
-            port.set_all(&settings).unwrap();
+            let port = serialport::new(&devfile, baudrate)
+                // no intrinsic timeout
+                .timeout(Duration::from_secs(1_000_000_000))
+                .open()
+                .map_err(|e| Error::comm_failed(e.to_string()))?;
             let rport = port.try_clone().map_err(|e| Error::comm_failed(e.to_string()))?;
             Ok((rport, port))
         };

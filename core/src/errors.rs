@@ -75,8 +75,29 @@ impl Error {
 
     pub fn into_msg(self, msg: String) -> Msg {
         Msg::ErrMsg {
-            class: error::Error::description(&self).into(),
+            class: self.wire().into(),
             report: json!([msg, self.message, {}])
+        }
+    }
+
+    fn wire(&self) -> &str {
+        use self::ErrorKind::*;
+        match self.kind {
+            Config | Programming | Parsing => "InternalError",
+            Protocol => "ProtocolError",
+            NoSuchModule => "NoSuchModule",
+            NoSuchParameter => "NoSuchParameter",
+            NoSuchCommand => "NoSuchCommand",
+            CommandFailed => "CommandFailed",
+            CommandRunning => "CommandRunning",
+            ReadOnly => "ReadOnly",
+            BadValue => "BadValue",
+            CommunicationFailed => "CommunicationFailed",
+            Timeout => "CommunicationFailed",
+            HardwareError => "CommunicationFailed",
+            IsBusy => "IsBusy",
+            IsError => "IsError",
+            Disabled => "Disabled",
         }
     }
 
@@ -115,32 +136,10 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl error::Error for Error {
-    /// This is also the wire format of the error kind.
-    fn description(&self) -> &str {
-        use self::ErrorKind::*;
-        match self.kind {
-            Config | Programming | Parsing => "InternalError",
-            Protocol => "ProtocolError",
-            NoSuchModule => "NoSuchModule",
-            NoSuchParameter => "NoSuchParameter",
-            NoSuchCommand => "NoSuchCommand",
-            CommandFailed => "CommandFailed",
-            CommandRunning => "CommandRunning",
-            ReadOnly => "ReadOnly",
-            BadValue => "BadValue",
-            CommunicationFailed => "CommunicationFailed",
-            Timeout => "CommunicationFailed",
-            HardwareError => "CommunicationFailed",
-            IsBusy => "IsBusy",
-            IsError => "IsError",
-            Disabled => "Disabled",
-        }
-    }
-}
+impl error::Error for Error {}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", error::Error::description(self), self.message)
+        write!(f, "{}: {}", self.wire(), self.message)
     }
 }

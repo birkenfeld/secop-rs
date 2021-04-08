@@ -8,21 +8,21 @@ edition = "2018"
 [dependencies]
 log = "0.4.8"
 url = "2.1.0"
-time = "0.1.42"
+time = "0.2.26"
 toml = "0.5.3"
-base64 = "0.10.1"
+base64 = "0.13.0"
 regex = "1.3.1"
 memchr = "2.2.1"
-mlzlog = "0.5.2"
+mlzlog = "0.7.0"
 mlzutil = "0.2.0"
 serde = "1.0.101"
 serde_json = "1.0.41"
 serde_derive = "1.0.101"
 lazy_static = "1.4.0"
 derive-new = "0.5.8"
-crossbeam-channel = "0.3.9"
-hashbrown = { version = "0.6.1", features = ["serde"] }
-parking_lot = { version = "0.9.0", features = ["nightly"] }
+crossbeam-channel = "0.5.0"
+hashbrown = { version = "0.11.2", features = ["serde"] }
+parking_lot = { version = "0.11.0", features = ["nightly"] }
 
 [dependencies.secop-derive]
 path = "../derive"

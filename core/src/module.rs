@@ -150,9 +150,7 @@ pub trait ModuleBase {
     /// Return a reference to the module internals.  Even though we require
     /// the internals to be a member with a fixed name, the member is not
     /// known in the `run` method below.
-    #[inline]
     fn internals(&self) -> &ModInternals;
-    #[inline]
     fn internals_mut(&mut self) -> &mut ModInternals;
     #[inline]
     fn name(&self) -> &str { &self.internals().name }
