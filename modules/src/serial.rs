@@ -24,7 +24,7 @@
 
 use std::time::Duration;
 use log::*;
-use serialport::{self, SerialPort};
+use serialport::{self, TTYPort};
 
 use secop_core::prelude::*;
 use secop_derive::ModuleBase;
@@ -60,7 +60,7 @@ use crate::support::comm::{CommClient, CommThread, HasComm};
 pub struct SerialComm {
     internals: ModInternals,
     cache: SerialCommParamCache,
-    comm: Option<CommClient<Box<dyn SerialPort>>>,
+    comm: Option<CommClient<TTYPort>>,
 }
 
 impl Module for SerialComm {
@@ -76,14 +76,14 @@ impl Module for SerialComm {
         let timeout = Duration::from_millis((*self.cache.timeout * 1000.) as u64);
         let baudrate = *self.cache.baudrate as u32;
 
-        let connect = move || -> Result<(Box<dyn SerialPort>, Box<dyn SerialPort>)> {
+        let connect = move || -> Result<(TTYPort, TTYPort)> {
             info!("opening {}...", devfile);
             let port = serialport::new(&devfile, baudrate)
                 // no intrinsic timeout
                 .timeout(Duration::from_secs(1_000_000_000))
-                .open()
+                .open_native()
                 .map_err(|e| Error::comm_failed(e.to_string()))?;
-            let rport = port.try_clone().map_err(|e| Error::comm_failed(e.to_string()))?;
+            let rport = port.try_clone_native().map_err(|e| Error::comm_failed(e.to_string()))?;
             Ok((rport, port))
         };
 
@@ -103,7 +103,7 @@ impl Module for SerialComm {
 }
 
 impl HasComm for SerialComm {
-    type IO = Box<dyn SerialPort>;
+    type IO = TTYPort;
 
     fn get_comm(&self) -> Result<&CommClient<Self::IO>> {
         self.comm.as_ref().ok_or_else(|| Error::comm_failed("connection not open"))
