@@ -205,7 +205,9 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
             impl TypeDesc for #struct_name {
                 type Repr = #name;
                 fn type_json(&self) -> Value {
-                    json!(["struct", { #( #descr_members )* }, [ #( #descr_optional )* ]])
+                    json!({"type": "struct",
+                           "members": { #( #descr_members )* },
+                           "optional": [ #( #descr_optional )* ]})
                 }
                 fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, Error> {
                     let mut map = Map::new();
@@ -269,7 +271,7 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
             impl TypeDesc for #struct_name {
                 type Repr = #name;
                 fn type_json(&self) -> Value {
-                    json!(["enum", { #( #descr_members )* }])
+                    json!({"type": "enum", "members": { #( #descr_members )* }})
                 }
                 fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, Error> {
                     Ok(json!(val as i64))

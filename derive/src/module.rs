@@ -365,14 +365,14 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 quote! { "unit": #unit, }
             } else { quote! {} };
             descriptive.push(quote! {
-                json!([#name, {
+                #name: {
                     "description": #doc,
-                    "datatype": #type_static.type_json(),
+                    "datainfo": #type_static.type_json(),
                     "readonly": #readonly,
                     "group": #group,
                     "visibility": #visibility,
                     #unit_entry
-                }]),
+                },
             });
         }
     }
@@ -405,13 +405,14 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         });
         if visibility != "none" {
             descriptive.push(quote! {
-                json!([#name, {
+                #name: {
                     "description": #doc,
-                    "datatype": ["command", #argtype_static.type_json(),
-                                 #restype_static.type_json()],
+                    "datainfo": {"type": "command",
+                                 "argument": #argtype_static.type_json(),
+                                 "result": #restype_static.type_json()},
                     "group": #group,
                     "visibility": #visibility,
-                }]),
+                },
             });
         }
     }
@@ -439,17 +440,16 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             fn internals_mut(&mut self) -> &mut ModInternals { &mut self.internals }
 
             fn describe(&self) -> Value {
-                let accessibles = vec![
-                    #( #descriptive )*
-                ];
-                json!([self.name(), {
+                json!({
                     "description": self.config().description,
-                    "interface_class": ["Drivable"], // TODO
+                    "interface_classes": ["Drivable"], // TODO
                     "features": [],
                     "visibility": self.config().visibility,
                     "group": self.config().group,
-                    "accessibles": accessibles
-                }])
+                    "accessibles": {
+                        #( #descriptive )*
+                    }
+                })
             }
 
             fn read(&mut self, param: &str) -> Result<Value> {

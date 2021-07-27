@@ -130,8 +130,8 @@ impl Server {
         let descriptive = json!({
             "description": self.config.description,
             "equipment_id": self.config.equipment_id,
-            "firmware": "secop-rs",
-            "modules": []
+            "firmware": concat!("secop-rs ", env!("CARGO_PKG_VERSION")),
+            "modules": {}
         });
 
         // create the dispatcher
@@ -267,11 +267,8 @@ impl Dispatcher {
                             // update of descriptive data, isn't sent on to clients
                             // but cached here
                             Describing { id, structure } => {
-                                let arr = self.descriptive["modules"].as_array_mut().expect("array");
-                                match arr.iter_mut().find(|item| item[0] == id) {
-                                    Some(item) => *item = structure,
-                                    None => arr.push(structure)
-                                }
+                                let obj = self.descriptive["modules"].as_object_mut().expect("object");
+                                obj.insert(id, structure);
                             }
                             // event update from a module, check where to send it
                             Update { ref module, .. } => {

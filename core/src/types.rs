@@ -41,6 +41,7 @@ use crate::errors::Error;
 pub trait TypeDesc {
     type Repr;
     /// Return a JSON-serialized description of the data type.
+    // TODO: add unit here.
     fn type_json(&self) -> Value;
     /// Convert an internal value, as determined by the module code,
     /// into the JSON representation for the protocol.
@@ -55,7 +56,9 @@ pub struct Null;
 
 impl TypeDesc for Null {
     type Repr = ();
-    fn type_json(&self) -> Value { json!(null) }
+    fn type_json(&self) -> Value {
+        json!(null)
+    }
     fn to_json(&self, _: Self::Repr) -> Result<Value, Error> {
         Ok(Value::Null)
     }
@@ -69,7 +72,9 @@ pub struct Bool;
 
 impl TypeDesc for Bool {
     type Repr = bool;
-    fn type_json(&self) -> Value { json!(["bool"]) }
+    fn type_json(&self) -> Value {
+        json!({"type": "bool"})
+    }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         Ok(Value::Bool(val))
     }
@@ -83,7 +88,9 @@ pub struct Double;
 
 impl TypeDesc for Double {
     type Repr = f64;
-    fn type_json(&self) -> Value { json!(["double"]) }
+    fn type_json(&self) -> Value {
+        json!({"type": "double"})
+    }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         Ok(json!(val))
     }
@@ -97,7 +104,9 @@ pub struct DoubleFrom(pub f64);
 
 impl TypeDesc for DoubleFrom {
     type Repr = f64;
-    fn type_json(&self) -> Value { json!(["double", self.0]) }
+    fn type_json(&self) -> Value {
+        json!({"type": "double", "min": self.0})
+    }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val >= self.0 {
             Ok(json!(val))
@@ -118,7 +127,9 @@ pub struct DoubleRange(pub f64, pub f64);
 
 impl TypeDesc for DoubleRange {
     type Repr = f64;
-    fn type_json(&self) -> Value { json!(["double", self.0, self.1]) }
+    fn type_json(&self) -> Value {
+        json!({"type": "double", "min": self.0, "max": self.1})
+    }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val >= self.0 && val <= self.1 {
             Ok(json!(val))
@@ -141,7 +152,9 @@ pub struct Int(pub i64, pub i64);
 
 impl TypeDesc for Int {
     type Repr = i64;
-    fn type_json(&self) -> Value { json!(["int", self.0, self.1]) }
+    fn type_json(&self) -> Value {
+        json!({"type": "int", "min": self.0, "max": self.1})
+    }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val >= self.0 && val <= self.1 {
             Ok(json!(val))
@@ -164,7 +177,9 @@ pub struct Blob(pub usize, pub usize);
 
 impl TypeDesc for Blob {
     type Repr = Vec<u8>;
-    fn type_json(&self) -> Value { json!(["blob", self.0, self.1]) }
+    fn type_json(&self) -> Value {
+        json!({"type": "blob", "minbytes": self.0, "maxbytes": self.1})
+    }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val.len() >= self.0 && val.len() <= self.1 {
             Ok(Value::String(base64::encode(&val)))
@@ -189,7 +204,9 @@ pub struct Str(pub usize);
 
 impl TypeDesc for Str {
     type Repr = String;
-    fn type_json(&self) -> Value { json!(["string", 0, self.0]) }
+    fn type_json(&self) -> Value {
+        json!({"type": "string", "maxchars": self.0, "isUTF8": true})
+    }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val.len() <= self.0 {
             Ok(Value::String(val))
@@ -211,7 +228,7 @@ pub struct ArrayOf<T: TypeDesc>(pub usize, pub usize, pub T);
 impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
     type Repr = Vec<T::Repr>;
     fn type_json(&self) -> Value {
-        json!(["array", self.2.type_json(), self.0, self.1])
+        json!({"type": "array", "members": self.2.type_json(), "minlen": self.0, "maxlen": self.1})
     }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if val.len() >= self.0 && val.len() <= self.1 {
@@ -245,7 +262,7 @@ macro_rules! impl_tuple {
         impl<$($tv: TypeDesc),*> TypeDesc for $name<$($tv),*> {
             type Repr = ($($tv::Repr),*);
             fn type_json(&self) -> Value {
-                json!(["tuple", $(self.$idx.type_json()),*])
+                json!({"type": "tuple", "members": [$(self.$idx.type_json()),*]})
             }
             fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
                 Ok(json!([ $(
@@ -290,7 +307,7 @@ pub struct Enum(pub HashMap<String, i64>);
 impl TypeDesc for Enum {
     type Repr = i64;
     fn type_json(&self) -> Value {
-        json!(["enum", self.0])
+        json!({"type": "enum", "members": self.0})
     }
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         if self.0.values().any(|&j| val == j) {
