@@ -262,32 +262,32 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
         par_read_arms.push(match swonly {
             false => quote! {
-                #name => try {
+                #name => (|| {
                     let read_value = self.#read_method()?;
                     let (value, time, send) = self.cache.#name_id.update(read_value, &*#type_static)?;
                     if send {
                         self.send_update(#name, value.clone(), time);
                     }
-                    (value, time)
-                }
+                    Ok((value, time))
+                })()
             },
             true => quote! {
-                #name => try {
+                #name => (|| {
                     let value = #type_static.to_json(self.cache.#name_id.clone())?;
-                    (value, self.cache.#name_id.time())
-                }
+                    Ok((value, self.cache.#name_id.time()))
+                })()
             },
         });
 
         par_write_arms.push(match (swonly, readonly) {
             (false, false) => quote! {
-                #name => try {
+                #name => (|| {
                     self.#write_method(#type_static.from_json(&value)?)?;
-                    self.read(#name)?
-                }
+                    self.read(#name)
+                })()
             },
             (true, false) => quote! {
-                #name => try {
+                #name => (|| {
                     // TODO: simplify?
                     let (value, time, send) =
                         self.cache.#name_id.update(#type_static.from_json(&value)?, &*#type_static)?;
@@ -295,8 +295,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                         self.send_update(#name, value.clone(), time);
                         self.#update_method(self.cache.#name_id.clone())?;
                     }
-                    json!([value, {"t": time}])
-                }
+                    Ok(json!([value, {"t": time}]))
+                })()
             },
             (_, true)  => quote! {
                 #name => Err(Error::new(ErrorKind::ReadOnly, ""))
@@ -397,11 +397,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             static ref #restype_static: typedesc_type!(#restype_expr) = #restype_expr;
         });
         cmd_arms.push(quote! {
-            #name => try {
+            #name => (|| {
                 let result_r = self.#do_method(#argtype_static.from_json(&arg)?)?;
                 let result = #restype_static.to_json(result_r)?;
-                json!([result, {"t": localtime()}])
-            }
+                Ok(json!([result, {"t": localtime()}]))
+            })()
         });
         if visibility != "none" {
             descriptive.push(quote! {

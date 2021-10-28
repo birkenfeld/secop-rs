@@ -37,7 +37,7 @@ use hashbrown::{HashMap, HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver, select, tick};
 use serde_json::{Value, json};
 use mlzutil::time::localtime;
-use parking_lot::Mutex;
+use parking_lot::{const_mutex, Mutex};
 
 use crate::config::ServerConfig;
 use crate::errors::Error;
@@ -66,10 +66,10 @@ pub type ModRepSender = Sender<(Option<HandlerId>, Msg)>;
 pub type ModRepReceiver = Receiver<(Option<HandlerId>, Msg)>;
 
 /// Global sender for new connections to the server.
-pub static CON_SENDER: Mutex<Option<ConSender>> = Mutex::new(None);
+pub static CON_SENDER: Mutex<Option<ConSender>> = const_mutex(None);
 
 /// Global sender for new requests to the dispatcher.
-pub static REQ_SENDER: Mutex<Option<ReqSender>> = Mutex::new(None);
+pub static REQ_SENDER: Mutex<Option<ReqSender>> = const_mutex(None);
 
 static NEXT_HID: AtomicUsize = AtomicUsize::new(1);
 

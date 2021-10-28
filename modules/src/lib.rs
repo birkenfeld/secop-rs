@@ -22,8 +22,6 @@
 //
 //! Module dispatcher.
 
-#![feature(try_blocks)]
-
 #[macro_use]
 extern crate secop_core;
 
