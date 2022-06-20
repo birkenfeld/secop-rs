@@ -1,8 +1,12 @@
 [package]
 name = "secop-derive"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>"]
 edition = "2018"
+description = "A Rust framework for a hardware server speaking the SECoP protocol (derive package)"
+keywords = ["scada", "secop", "hardware", "sample-environment"]
+license = "GPL-2.0+"
+repository = "https://github.com/birkenfeld/secop-rs"
 
 [lib]
 proc-macro = true

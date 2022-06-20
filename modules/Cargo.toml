@@ -1,9 +1,13 @@
 [package]
 name = "secop-modules"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
            "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
 edition = "2018"
+description = "A Rust framework for a hardware server speaking the SECoP protocol (modules package)"
+keywords = ["scada", "secop", "hardware", "sample-environment"]
+license = "GPL-2.0+"
+repository = "https://github.com/birkenfeld/secop-rs"
 
 [dependencies]
 log = "0.4.8"
