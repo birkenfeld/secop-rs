@@ -2,7 +2,7 @@
 
 [package]
 name = "secop"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
            "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
 edition = "2018"
@@ -21,7 +21,9 @@ signal-hook = "0.3.8"
 structopt = "0.3.2"
 
 [dependencies.secop-core]
+version = "0.1.3"
 path = "core"
 
 [dependencies.secop-modules]
+version = "0.1.3"
 path = "modules"
