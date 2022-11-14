@@ -24,22 +24,21 @@
 
 use log::*;
 use mlzutil::fs as fsutil;
-use structopt::{clap, StructOpt};
+use clap::Parser;
 
 use secop_core::config;
 use secop_core::server::Server;
 
 
-#[derive(StructOpt)]
-#[structopt(setting = clap::AppSettings::UnifiedHelpMessage)]
+#[derive(Parser)]
 struct Options {
-    #[structopt(short="v", long="verbose", help="Debug logging output?")]
+    #[clap(short='v', long="verbose", help="Debug logging output?")]
     verbose: bool,
-    #[structopt(long="log", help="Logging path (if not given, log to journal)")]
+    #[clap(long="log", help="Logging path (if not given, log to journal)")]
     log: Option<String>,
-    #[structopt(long="bind", help="Bind address (host:port)", default_value="0.0.0.0:10767")]
+    #[clap(long="bind", help="Bind address (host:port)", default_value="0.0.0.0:10767")]
     bind: String,
-    #[structopt(help="Configuration file name to load")]
+    #[clap(help="Configuration file name to load")]
     config: String,
 }
 

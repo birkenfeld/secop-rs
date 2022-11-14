@@ -13,12 +13,11 @@ repository = "https://github.com/birkenfeld/secop-rs"
 
 [dependencies]
 log = "0.4.8"
-clap = "2.33.0"
+clap = { version = "3.2.23", features = ["derive"] }
 mlzlog = "0.7.0"
 mlzutil = "0.2.0"
 daemonize = "0.4.1"
 signal-hook = "0.3.8"
-structopt = "0.3.2"
 
 [dependencies.secop-core]
 version = "0.1.3"

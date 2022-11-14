@@ -22,8 +22,8 @@
 //
 //! Configuration file handling.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use hashbrown::{HashMap, HashSet};
 use serde_derive::{Serialize, Deserialize};
 use serde_json::Value;
 use toml;

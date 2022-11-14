@@ -23,7 +23,7 @@
 //
 //! SECoP data type definitions.
 
-use hashbrown::HashMap;
+use std::collections::HashMap;
 use serde_json::{Value, json};
 use secop_derive::TypeDesc;
 

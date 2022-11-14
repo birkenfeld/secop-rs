@@ -23,6 +23,7 @@
 //! This module contains the server instance itself, and associated objects to
 //! handle connections and message routing.
 
+use std::collections::{HashMap, HashSet};
 use std::error::Error as StdError;
 use std::io::{Read as IoRead, Write as IoWrite};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -33,7 +34,6 @@ use std::thread;
 use log::*;
 use memchr::memchr;
 use derive_new::new;
-use hashbrown::{HashMap, HashSet};
 use crossbeam_channel::{unbounded, Sender, Receiver, select, tick};
 use serde_json::{Value, json};
 use mlzutil::time::localtime;
