@@ -37,10 +37,10 @@
 //!
 //! ```
 //! #[derive(ModuleBase)]
-//! #[param(name="status", datatype="StatusType", readonly=True)]
-//! #[param(name="value", datatype="Double", readonly=True)]
-//! #[param(name="target", datatype="Double")]
-//! #[param(name="speed", datatype="DoubleFrom(0.0)", default="1.0")]
+//! #[param(name="status", datainfo="StatusType", readonly=True)]
+//! #[param(name="value", datainfo="Double()", readonly=True)]
+//! #[param(name="target", datainfo="Double()")]
+//! #[param(name="speed", datainfo="Double(min=0.0)", default="1.0")]
 //! #[command(name="stop", argtype="Null", restype="Null")]
 //! struct Motor {
 //!     // required by the framework
@@ -78,7 +78,8 @@
 //! ```
 
 use std::collections::HashSet;
-use syn::{Expr, spanned::Spanned};
+use proc_macro2::TokenStream;
+use syn::{Error, Expr, spanned::Spanned};
 use quote::{quote, quote_spanned, format_ident};
 use darling::FromMeta;
 
@@ -93,7 +94,7 @@ struct SecopParam {
     /// Documentation/description (also transmitted to clients).
     doc: String,
     /// Datatype, from secop_core::types or self-defined.
-    datatype: String,
+    datainfo: String,
     /// If true, the parameter cannot be changed from a client.
     readonly: bool,
     /// If true, the parameter is only software-related and does not
@@ -144,15 +145,34 @@ struct SecopCommand {
 
 
 /// Parse an attribute (using darling) into the given struct representation.
-fn parse_attr<T: FromMeta>(attr: &syn::Attribute) -> Result<T, proc_macro2::TokenStream> {
+fn parse_attr<T: FromMeta>(attr: &syn::Attribute) -> Result<T, TokenStream> {
     attr.parse_meta()
         .map_err(|err| format!("invalid param attribute: {}", err))
         .and_then(|meta| T::from_meta(&meta).map_err(|_| "could not parse this attribute".into()))
         .map_err(|e| quote_spanned! { attr.span() => compile_error!(#e); })
 }
 
+/// Use instead of panic!() to assign the error to a proper span, if possible.
+macro_rules! try_ {
+    ($expr:expr) => (
+        match $expr {
+            Ok(v) => v,
+            Err(e) => return TokenStream::from(e.to_compile_error())
+        }
+    );
+    ($expr:expr, $($tt:tt)*) => (
+        match $expr {
+            Ok(v) => v,
+            Err(mut e) => {
+                e.combine(Error::new(e.span(), format!($($tt)*)));
+                return TokenStream::from(e.to_compile_error())
+            }
+        }
+    );
+}
+
 /// Main derive function for ModuleBase.
-pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream {
+pub fn derive_module(input: synstructure::Structure) -> TokenStream {
     let mut params = Vec::new();
     let mut commands = Vec::new();
 
@@ -164,12 +184,12 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     for attr in &input.ast().attrs {
         if attr.path.segments[0].ident == "param" {
             match parse_attr::<SecopParam>(attr) {
-                Ok(param) => params.push(param),
+                Ok(param) => params.push((attr.span(), param)),
                 Err(err) => return err
             }
         } else if attr.path.segments[0].ident == "command" {
             match parse_attr::<SecopCommand>(attr) {
-                Ok(cmd) => commands.push(cmd),
+                Ok(cmd) => commands.push((attr.span(), cmd)),
                 Err(err) => return err
             }
         }
@@ -185,12 +205,15 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 if field.ident.as_ref().unwrap() == "cache" { has_cache = true; }
             }
         }
-        _ => panic!("derive(ModuleBase) is only possible for a struct with named fields")
+        _ => try_!(Err(Error::new(input.ast().ident.span(),
+                                  "derive(ModuleBase) is only possible for a \
+                                   struct with named fields")))
     }
 
     if !has_internals || !has_cache {
-        panic!("struct {} must have \"internals: ModInternals\" and \
-                \"cache: {}ParamCache\" members", name, name);
+        try_!(Err(Error::new(input.ast().ident.span(),
+                             format!("struct {} must have \"internals: ModInternals\" and \
+                                      \"cache: {}ParamCache\" members", name, name))));
     }
 
     // We need to check names for uniqueness, after lowercasing.
@@ -211,30 +234,31 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
     let mut init_params_write = vec![];
     let mut init_params_read = vec![];
 
-    for SecopParam { name, doc, datatype, readonly, swonly, mandatory, polling,
-                     default, unit, group, visibility } in params {
+    for (span,
+         SecopParam { name, doc, datainfo, readonly, swonly, mandatory, polling,
+                      default, unit, group, visibility }) in params {
         let polling = polling.unwrap_or(if swonly { 0 } else { 1 });
 
         // Check necessary invariants.
         if !lc_names.insert(name.to_lowercase()) {
-            panic!("param/cmd name {} is not unique", name)
+            try_!(Err(Error::new(span, "param/cmd name is not unique")));
         }
         if !VISIBILITIES.iter().any(|&v| v == visibility) {
-            panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
+            try_!(Err(Error::new(span, "visibility is not an allowed value")));
         }
         if swonly {
             if polling != 0 {
-                panic!("software-only parameters cannot be polled");
+                try_!(Err(Error::new(span, "software-only parameters cannot be polled")));
             }
             if default.is_none() && !mandatory {
-                panic!("software-only parameters must have a default if not mandatory");
+                try_!(Err(Error::new(span, "software-only parameters must have a default if not mandatory")));
             }
         } else {
             if default.is_some() && readonly {
-                panic!("readonly hardware parameters cannot have a default");
+                try_!(Err(Error::new(span, "readonly hardware parameters cannot have a default")));
             }
             if mandatory && readonly {
-                panic!("readonly hardware parameters cannot be mandatory");
+                try_!(Err(Error::new(span, "readonly hardware parameters cannot be mandatory")));
             }
         }
 
@@ -242,11 +266,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         // The parameter metatype instances are in principle constant, but
         // cannot be `const`, so we use `lazy_static` instead.
         let type_static = format_ident!("PAR_TYPE_{}", name);
-        let type_expr = syn::parse_str::<Expr>(&datatype).expect("unparseable datatype");
+        let (type_t, type_expr) = try_!(crate::parse_datainfo(span, &datainfo));
         statics.push(quote! {
-            static ref #type_static: typedesc_type!(#type_expr) = #type_expr;
+            static ref #type_static: #type_t = #type_expr;
         });
-        let type_repr = quote! { <typedesc_type!(#type_expr) as TypeDesc>::Repr };
+        let type_repr = quote! { <#type_t as TypeInfo>::Repr };
 
         // Populate members of the parameter cache struct.
         param_cache.push(quote! {
@@ -308,7 +332,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             let polling_period = polling.abs() as usize;
             let poll_it = quote! {
                 if n % #polling_period == 0 {
-                    // TODO: error handling (should send a "null" update message)
+                    // TODO: error handling (should send a error_update message)
                     let _ = self.read(#name);
                 }
             };
@@ -336,8 +360,11 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         // (depending on whether the parameter is writable at runtime).
         //
         // TODO: check mandatory (where?)
-        let def_expr = default.map(|def| syn::parse_str::<Expr>(&def).unwrap_or_else(
-            |e| panic!("unparseable default value for param {}: {}", name, e)));
+        let def_expr = match default {
+            None => None,
+            Some(def) => Some(try_!(syn::parse_str::<Expr>(&def),
+                                    "unparseable default value for param {}", name))
+        };
         let def_option = def_expr.map_or(quote!(None::<fn() -> #type_repr>),
                                          |expr| quote!(Some(|| #expr)));
         let upd_closure = if swonly && !readonly {
@@ -367,7 +394,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
             descriptive.push(quote! {
                 #name: {
                     "description": #doc,
-                    "datainfo": #type_static.type_json(),
+                    "datainfo": serde_json::to_value(&*#type_static).unwrap(),
                     "readonly": #readonly,
                     "group": #group,
                     "visibility": #visibility,
@@ -379,22 +406,23 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
 
     // Handling for commands is very similar to, but simpler than, parameter handling,
     // since commands do not have to do initialization, caching, or polling.
-    for SecopCommand { name, doc, argtype, restype, group, visibility } in commands {
+    for (span,
+         SecopCommand { name, doc, argtype, restype, group, visibility }) in commands {
         if !lc_names.insert(name.to_lowercase()) {
-            panic!("param/cmd name {} is not unique", name)
+            try_!(Err(Error::new(span, "param/cmd name is not unique")));
         }
         if !VISIBILITIES.iter().any(|&v| v == visibility) {
-            panic!("visibility {:?} is not an allowed value for param {}", visibility, name);
+            try_!(Err(Error::new(span, "visibility is not an allowed value")));
         }
 
         let argtype_static = format_ident!("CMD_ARG_{}", name);
-        let argtype_expr = syn::parse_str::<Expr>(&argtype).expect("unparseable datatype");
+        let (argtype_t, argtype) = try_!(crate::parse_datainfo(span, &argtype));
         let restype_static = format_ident!("CMD_RES_{}", name);
-        let restype_expr = syn::parse_str::<Expr>(&restype).expect("unparseable datatype");
+        let (restype_t, restype) = try_!(crate::parse_datainfo(span, &restype));
         let do_method = format_ident!("do_{}", name);
         statics.push(quote! {
-            static ref #argtype_static: typedesc_type!(#argtype_expr) = #argtype_expr;
-            static ref #restype_static: typedesc_type!(#restype_expr) = #restype_expr;
+            static ref #argtype_static: #argtype_t = #argtype;
+            static ref #restype_static: #restype_t = #restype;
         });
         cmd_arms.push(quote! {
             #name => (|| {
@@ -408,8 +436,8 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
                 #name: {
                     "description": #doc,
                     "datainfo": {"type": "command",
-                                 "argument": #argtype_static.type_json(),
-                                 "result": #restype_static.type_json()},
+                                 "argument": serde_json::to_value(&*#argtype_static).unwrap(),
+                                 "result": serde_json::to_value(&*#restype_static).unwrap()},
                     "group": #group,
                     "visibility": #visibility,
                 },
@@ -430,6 +458,7 @@ pub fn derive_module(input: synstructure::Structure) -> proc_macro2::TokenStream
         use secop_core::errors::{Error, ErrorKind, Result};
         use secop_core::proto::Msg;
         use secop_core::module::ModuleBase;
+        use secop_core::types::TypeInfo;
 
         lazy_static! {
             #( #statics )*

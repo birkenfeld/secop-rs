@@ -21,16 +21,23 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! SECoP data type definitions.
+//! SECoP data type / data info definitions.
 
 use std::collections::HashMap;
+use serde::ser::{Serialize, Serializer, SerializeMap};
+use serde_derive::Serialize;
 use serde_json::{Value, json};
-use secop_derive::TypeDesc;
+use secop_derive::TypeInfo;
 
 use crate::errors::Error;
 
-/// Represents a defined SECoP data type usable for parameters and command
-/// arguments/results.
+fn is_zero(v: &usize) -> bool { *v == 0 }
+fn is_false(v: &bool) -> bool { !*v }
+fn is_none<T>(v: &Option<T>) -> bool { v.is_none() }
+
+
+/// Represents a defined SECoP data type with meta information usable for
+/// parameters and command arguments/results.
 ///
 /// The Repr associated type should be set to a Rust type that can hold all
 /// possible values, and conversion between JSON and that type is implemented
@@ -38,11 +45,8 @@ use crate::errors::Error;
 ///
 /// On conversion error, the incoming JSON Value is simply returned, and the
 /// caller is responsible for raising the correct SECoP error.
-pub trait TypeDesc {
+pub trait TypeInfo : Serialize {
     type Repr;
-    /// Return a JSON-serialized description of the data type.
-    // TODO: add unit here.
-    fn type_json(&self) -> Value;
     /// Convert an internal value, as determined by the module code,
     /// into the JSON representation for the protocol.
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error>;
@@ -54,14 +58,20 @@ pub trait TypeDesc {
 /// Null is not usable as a parameter data type, only for commands.
 pub struct Null;
 
-impl TypeDesc for Null {
-    type Repr = ();
-    fn type_json(&self) -> Value {
-        json!(null)
+impl Serialize for Null {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer
+    {
+        serializer.serialize_none()
     }
+}
+
+impl TypeInfo for Null {
+    type Repr = ();
+
     fn to_json(&self, _: Self::Repr) -> Result<Value, Error> {
         Ok(Value::Null)
     }
+
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         if val.is_null() { Ok(()) } else { Err(Error::bad_value("expected null")) }
     }
@@ -70,186 +80,282 @@ impl TypeDesc for Null {
 
 pub struct Bool;
 
-impl TypeDesc for Bool {
-    type Repr = bool;
-    fn type_json(&self) -> Value {
-        json!({"type": "bool"})
+impl Serialize for Bool {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer
+    {
+        let mut map = serializer.serialize_map(Some(1))?;
+        map.serialize_entry("type", "bool")?;
+        map.end()
     }
+}
+
+impl TypeInfo for Bool {
+    type Repr = bool;
+
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
         Ok(Value::Bool(val))
     }
+
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         val.as_bool().ok_or_else(|| Error::bad_value("expected boolean"))
     }
 }
 
 
-pub struct Double;
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "double")]
+pub struct Double {
+    #[serde(skip_serializing_if = "is_none")]
+    min: Option<f64>,
+    #[serde(skip_serializing_if = "is_none")]
+    max: Option<f64>,
+    #[serde(skip_serializing_if = "is_none")]
+    unit: Option<String>,  // TODO: interning?
+    #[serde(skip_serializing_if = "is_none")]
+    fmtstr: Option<String>,
+    #[serde(skip_serializing_if = "is_none")]
+    absolute_resolution: Option<f64>,
+    #[serde(skip_serializing_if = "is_none")]
+    relative_resolution: Option<f64>,
+}
 
-impl TypeDesc for Double {
-    type Repr = f64;
-    fn type_json(&self) -> Value {
-        json!({"type": "double"})
+impl Double {
+    pub fn new() -> Self {
+        Self { min: None, max: None, unit: None, fmtstr: None,
+               absolute_resolution: None, relative_resolution: None }
     }
+
+    pub fn min(self, val: f64) -> Self {
+        Self { min: Some(val), .. self }
+    }
+
+    pub fn max(self, val: f64) -> Self {
+        Self { max: Some(val), .. self }
+    }
+
+    pub fn unit(self, val: &str) -> Self {
+        Self { unit: Some(val.into()), .. self }
+    }
+
+    pub fn fmtstr(self, val: &str) -> Self {
+        Self { fmtstr: Some(val.into()), .. self }
+    }
+
+    pub fn absolute_resolution(self, val: f64) -> Self {
+        Self { absolute_resolution: Some(val), .. self }
+    }
+
+    pub fn relative_resolution(self, val: f64) -> Self {
+        Self { relative_resolution: Some(val), .. self }
+    }
+}
+
+impl Double {
+    fn check(&self, v: f64) -> Result<bool, Error> {
+        match (self.min, self.max) {
+            (Some(min), Some(max)) => if v < min || v > max {
+                return Err(Error::bad_value(format!("expected double between {} and {}", min, max)));
+            }
+            (Some(min), _) => if v < min {
+                return Err(Error::bad_value(format!("expected double above {}", min)));
+            }
+            (_, Some(max)) => if v > max {
+                return Err(Error::bad_value(format!("expected double below {}", max)));
+            }
+            _ => ()
+        }
+        Ok(true)
+    }
+}
+
+impl TypeInfo for Double {
+    type Repr = f64;
+
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
+        self.check(val)?;
         Ok(json!(val))
     }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        val.as_f64().ok_or_else(|| Error::bad_value("expected double"))
-    }
-}
 
-
-pub struct DoubleFrom(pub f64);
-
-impl TypeDesc for DoubleFrom {
-    type Repr = f64;
-    fn type_json(&self) -> Value {
-        json!({"type": "double", "min": self.0})
-    }
-    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if val >= self.0 {
-            Ok(json!(val))
-        } else {
-            Err(Error::bad_value(format!("expected double >= {}", self.0)))
-        }
-    }
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         match val.as_f64() {
-            Some(v) if v >= self.0 => Ok(v),
-            _ => Err(Error::bad_value(format!("expected double >= {}", self.0)))
+            Some(v) if self.check(v)? => Ok(v),
+            _ => Err(Error::bad_value(format!("expected double")))
         }
     }
 }
 
 
-pub struct DoubleRange(pub f64, pub f64);
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "int")]
+pub struct Int {
+    min: i64,
+    max: i64,
+}
 
-impl TypeDesc for DoubleRange {
-    type Repr = f64;
-    fn type_json(&self) -> Value {
-        json!({"type": "double", "min": self.0, "max": self.1})
+impl Int {
+    pub fn new() -> Self {
+        Self { min: i64::MIN, max: i64::MAX }
     }
-    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if val >= self.0 && val <= self.1 {
-            Ok(json!(val))
-        } else {
-            Err(Error::bad_value(format!("expected double between {} and {}",
-                                         self.0, self.1)))
-        }
+
+    pub fn min(self, val: i64) -> Self {
+        Self { min: val, .. self }
     }
-    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
-        match val.as_f64() {
-            Some(v) if v >= self.0 && v <= self.1 => Ok(v),
-            _ => Err(Error::bad_value(format!("expected double between {} and {}",
-                                              self.0, self.1)))
-        }
+
+    pub fn max(self, val: i64) -> Self {
+        Self { max: val, .. self }
     }
 }
 
-
-pub struct Int(pub i64, pub i64);
-
-impl TypeDesc for Int {
+impl TypeInfo for Int {
     type Repr = i64;
-    fn type_json(&self) -> Value {
-        json!({"type": "int", "min": self.0, "max": self.1})
-    }
+
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if val >= self.0 && val <= self.1 {
+        if val >= self.min && val <= self.max {
             Ok(json!(val))
         } else {
             Err(Error::bad_value(format!("expected integer between {} and {}",
-                                         self.0, self.1)))
+                                         self.min, self.max)))
         }
     }
+
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         match val.as_i64() {
-            Some(v) if v >= self.0 && v <= self.1 => Ok(v),
+            Some(v) if v >= self.min && v <= self.max => Ok(v),
             _ => Err(Error::bad_value(format!("expected integer between {} and {}",
-                                              self.0, self.1)))
+                                              self.min, self.max)))
         }
     }
 }
 
 
-pub struct Blob(pub usize, pub usize);
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "blob")]
+pub struct Blob {
+    #[serde(skip_serializing_if = "is_zero")]
+    minbytes: usize,
+    maxbytes: usize,
+}
 
-impl TypeDesc for Blob {
-    type Repr = Vec<u8>;
-    fn type_json(&self) -> Value {
-        json!({"type": "blob", "minbytes": self.0, "maxbytes": self.1})
+impl Blob {
+    pub fn new() -> Self {
+        Self { minbytes: 0, maxbytes: 1024 }
     }
+
+    pub fn minbytes(self, val: usize) -> Self {
+        Self { minbytes: val, .. self }
+    }
+
+    pub fn maxbytes(self, val: usize) -> Self {
+        Self { maxbytes: val, .. self }
+    }
+}
+
+impl TypeInfo for Blob {
+    type Repr = Vec<u8>;
+
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if val.len() >= self.0 && val.len() <= self.1 {
+        if val.len() >= self.minbytes && val.len() <= self.maxbytes {
             Ok(Value::String(base64::encode(&val)))
         } else {
             Err(Error::bad_value(format!("expected blob with length between {} and {}",
-                                         self.0, self.1)))
+                                         self.minbytes, self.maxbytes)))
         }
     }
+
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         if let Some(v) = val.as_str().and_then(|s| base64::decode(s).ok()) {
-            if v.len() >= self.0 && v.len() <= self.1 {
+            if v.len() >= self.minbytes && v.len() <= self.maxbytes {
                 return Ok(v);
             }
         }
         Err(Error::bad_value(format!("expected base64 coded string with decoded \
-                                      length between {} and {}", self.0, self.1)))
+                                      length between {} and {}", self.minbytes, self.maxbytes)))
     }
 }
 
 
-pub struct Str(pub usize);
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "string")]
+pub struct Str {
+    #[serde(skip_serializing_if = "is_zero")]
+    minchars: usize,
+    maxchars: usize,
+    #[serde(rename = "isUTF8")]
+    #[serde(skip_serializing_if = "is_false")]
+    is_utf8: bool,
+}
 
-impl TypeDesc for Str {
-    type Repr = String;
-    fn type_json(&self) -> Value {
-        json!({"type": "string", "maxchars": self.0, "isUTF8": true})
+impl Str {
+    pub fn new() -> Self {
+        Self { minchars: 0, maxchars: 1024, is_utf8: false }
     }
+
+    pub fn minchars(self, val: usize) -> Self {
+        Self { minchars: val, .. self }
+    }
+
+    pub fn maxchars(self, val: usize) -> Self {
+        Self { maxchars: val, .. self }
+    }
+
+    pub fn is_utf8(self, val: bool) -> Self {
+        Self { is_utf8: val, .. self }
+    }
+}
+
+impl TypeInfo for Str {
+    type Repr = String;
+
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if val.len() <= self.0 {
+        if val.len() <= self.maxchars {
             Ok(Value::String(val))
         } else {
-            Err(Error::bad_value(format!("expected string with length <= {}", self.0)))
+            Err(Error::bad_value(format!("expected string with length <= {:?}", self.maxchars)))
         }
     }
+
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         match val.as_str() {
-            Some(v) if v.len() <= self.0 => Ok(v.into()),
-            _ => Err(Error::bad_value(format!("expected string with length <= {}", self.0)))
+            Some(v) if v.len() <= self.maxchars => Ok(v.into()),
+            _ => Err(Error::bad_value(format!("expected string with length <= {:?}", self.maxchars)))
         }
     }
 }
 
 
-pub struct ArrayOf<T: TypeDesc>(pub usize, pub usize, pub T);
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "array")]
+pub struct ArrayOf<T: TypeInfo> {
+    #[serde(skip_serializing_if = "is_zero")]
+    pub minlen: usize,
+    pub maxlen: usize,
+    pub members: T,
+}
 
-impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
+impl<T: TypeInfo> TypeInfo for ArrayOf<T> {
     type Repr = Vec<T::Repr>;
-    fn type_json(&self) -> Value {
-        json!({"type": "array", "members": self.2.type_json(), "minlen": self.0, "maxlen": self.1})
-    }
+
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if val.len() >= self.0 && val.len() <= self.1 {
+        if val.len() >= self.minlen && val.len() <= self.maxlen {
             let v: Result<Vec<_>, _> = val.into_iter().enumerate().map(|(i, v)| {
-                self.2.to_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
+                self.members.to_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
             }).collect();
             Ok(Value::Array(v?))
         } else {
             Err(Error::bad_value(format!("expected vector with length between {} and {}",
-                                         self.0, self.1)))
+                                         self.minlen, self.maxlen)))
         }
     }
+
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         match val.as_array() {
-            Some(arr) if arr.len() >= self.0 && arr.len() <= self.1 => {
+            Some(arr) if arr.len() >= self.minlen && arr.len() <= self.maxlen => {
                 arr.iter().enumerate().map(|(i, v)| {
-                    self.2.from_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
+                    self.members.from_json(v).map_err(|e| e.amend(&format!("in item {}", i+1)))
                 }).collect()
             }
             _ => Err(Error::bad_value(format!("expected array with length between {} and {}",
-                                              self.0, self.1)))
+                                              self.minlen, self.maxlen)))
         }
     }
 }
@@ -257,19 +363,28 @@ impl<T: TypeDesc> TypeDesc for ArrayOf<T> {
 
 macro_rules! impl_tuple {
     ($name:tt => $($tv:tt),* : $len:tt : $($idx:tt),*) => {
-        pub struct $name<$($tv: TypeDesc),*>($(pub $tv),*);
+        pub struct $name<$($tv: TypeInfo),*>($(pub $tv),*);
 
-        impl<$($tv: TypeDesc),*> TypeDesc for $name<$($tv),*> {
-            type Repr = ($($tv::Repr),*);
-            fn type_json(&self) -> Value {
-                json!({"type": "tuple", "members": [$(self.$idx.type_json()),*]})
+        impl<$($tv: TypeInfo),*> Serialize for $name<$($tv),*> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+                let members = ($(&self.$idx),+);
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("type", "tuple")?;
+                map.serialize_entry("members", &members)?;
+                map.end()
             }
+        }
+
+        impl<$($tv: TypeInfo),*> TypeInfo for $name<$($tv),*> {
+            type Repr = ($($tv::Repr),*);
+
             fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
                 Ok(json!([ $(
                     self.$idx.to_json(val.$idx)
                              .map_err(|e| e.amend(concat!("in item ", $idx))) ?
                 ),* ]))
             }
+
             fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
                 if let Some(arr) = val.as_array() {
                     if arr.len() == $len {
@@ -300,27 +415,30 @@ impl_tuple!(Tuple6 => T1, T2, T3, T4, T5, T6 : 6 : 0, 1, 2, 3, 4, 5);
 
 /// A generic enum.  On the Rust side, this is represented as an untyped i64.
 ///
-/// You should prefer implementing your own enum class and deriving `TypeDesc`
+/// You should prefer implementing your own enum class and deriving `TypeInfo`
 /// for it using secop-derive.
-pub struct Enum(pub HashMap<String, i64>);
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "enum")]
+pub struct Enum {
+    members: HashMap<String, i64>
+}
 
-impl TypeDesc for Enum {
+impl TypeInfo for Enum {
     type Repr = i64;
-    fn type_json(&self) -> Value {
-        json!({"type": "enum", "members": self.0})
-    }
+
     fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
-        if self.0.values().any(|&j| val == j) {
+        if self.members.values().any(|&j| val == j) {
             Ok(json!(val))
         } else {
             Err(Error::bad_value("integer not an enum member"))
         }
     }
+
     fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
         if let Some(s) = val.as_str() {
-            self.0.get(s).cloned().ok_or_else(|| Error::bad_value("string not an enum member"))
+            self.members.get(s).cloned().ok_or_else(|| Error::bad_value("string not an enum member"))
         } else if let Some(i) = val.as_i64() {
-            if self.0.values().any(|&j| i == j) { Ok(i) }
+            if self.members.values().any(|&j| i == j) { Ok(i) }
             else { Err(Error::bad_value("integer not an enum member")) }
         } else {
             Err(Error::bad_value("expected string or integer"))
@@ -331,7 +449,7 @@ impl TypeDesc for Enum {
 
 // The Status enum, and predefined type.
 
-#[derive(TypeDesc, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(TypeInfo, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusConst {
     Idle = 100,
     Warn = 200,
@@ -355,29 +473,6 @@ impl Default for StatusConst {
 // there is *always* a constant with the same name as the type.
 pub type StatusType = Tuple2<StatusConstType, Str>;
 #[allow(non_upper_case_globals)]
-pub const StatusType: StatusType = Tuple2(StatusConstType, Str(1024));
+pub const StatusType: StatusType = Tuple2(StatusConstType, Str { minchars: 0, maxchars: 1024, is_utf8: false });
 
 pub type Status = (StatusConst, String);
-
-
-// This is a bit of a mess :(
-//
-// In order to generate the param/cmd types as statics, we need not only
-// the value given by the user, e.g. `DoubleFrom(0.)`, but also its type
-// (since statics don't allow inferring the type).
-//
-// This provides a working but very brittle way of doing this, for now.
-#[macro_export]
-macro_rules! typedesc_type {
-    (DoubleFrom($_:expr)) => (DoubleFrom);
-    (DoubleRange($_:expr, $__:expr)) => (DoubleRange);
-    (Int($_:expr, $__:expr)) => (Int);
-    (Blob($_:expr)) => (Blob);
-    (Str($_:expr)) => (Str);
-    (Enum($_:expr)) => (Enum);
-    (ArrayOf($_:expr, $__:expr, $($tp:tt)*)) => (ArrayOf<typedesc_type!($($tp)*)>);
-    (Tuple2($tp1a:tt $( ( $($tp1b:tt)* ) )*, $($tp2:tt)*)) => (
-        Tuple2<typedesc_type![$tp1a $( ($($tp1b)*) )*], typedesc_type!($($tp2)*)>);
-    // For "simple" (unit-struct) types, which includes user-derived types.
-    ($stalone_type:ty) => ($stalone_type);
-}

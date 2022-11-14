@@ -43,8 +43,8 @@ pub mod prelude {
     pub use crate::module::{ModInternals, ModuleBase, Module};
     pub use crate::config::{ServerConfig, ModuleConfig};
     pub use crate::client::Client;
-    pub use crate::types::{TypeDesc, Null, Bool, Double, DoubleFrom,
-                           DoubleRange, Int, Blob, Str, ArrayOf,
-                           Tuple2, Tuple3, Tuple4, Tuple5, Tuple6,
-                           Enum, StatusConst, StatusType, Status};
+    pub use crate::types::{TypeInfo, Null, Bool, Double, Int, Blob,
+                           Str, ArrayOf, Tuple2, Tuple3, Tuple4,
+                           Tuple5, Tuple6, Enum, StatusConst,
+                           StatusType, Status};
 }

@@ -33,29 +33,29 @@ use crate::support::comm::{CommClient, CommThread, HasComm};
 
 
 #[derive(ModuleBase)]
-#[param(name="status", doc="status", datatype="StatusType", readonly=true)]
+#[param(name="status", doc="status", datainfo="StatusType", readonly=true)]
 #[command(name="communicate", doc="communicate (write/read cycle)",
-          argtype="Str(1024)", restype="Str(1024)")]
+          argtype="Str(maxchars=1024)", restype="Str(maxchars=1024)")]
 #[command(name="readline", doc="read a message",
-          argtype="Null", restype="Str(1024)")]
+          argtype="Null", restype="Str(maxchars=1024)")]
 #[command(name="writeline", doc="write a message",
-          argtype="Str(1024)", restype="Null")]
+          argtype="Str(maxchars=1024)", restype="Null")]
 #[command(name="read", doc="read input buffer",
-          argtype="Null", restype="Str(1024)")]
+          argtype="Null", restype="Str(maxchars=1024)")]
 #[command(name="write", doc="write raw string",
-          argtype="Str(1024)", restype="Null")]
+          argtype="Str(maxchars=1024)", restype="Null")]
 #[command(name="multi_communicate", doc="do multiple communicate cycles",
-          argtype="ArrayOf(1, 16, Tuple2(Str(1024), Double))",
-          restype="ArrayOf(1, 16, Str(1024))")]
-#[param(name="sol", doc="start-of-line", datatype="Str(8)", readonly=true,
+          argtype="[(Str(maxchars=1024), Double()); 1..=16]",
+          restype="[Str(maxchars=1024); 1..=16]")]
+#[param(name="sol", doc="start-of-line", datainfo="Str(maxchars=8)", readonly=true,
         default="\"\".into()", swonly=true, visibility="none")]
-#[param(name="eol", doc="end-of-line", datatype="Str(8)", readonly=true,
+#[param(name="eol", doc="end-of-line", datainfo="Str(maxchars=8)", readonly=true,
         default="\"\\n\".into()", swonly=true, visibility="none")]
-#[param(name="timeout", doc="comm timeout", datatype="DoubleFrom(0.)", readonly=true,
+#[param(name="timeout", doc="comm timeout", datainfo="Double(min=0.)", readonly=true,
         default="2.0", swonly=true, visibility="none")]
-#[param(name="devfile", doc="device file name", datatype="Str(128)", readonly=true,
+#[param(name="devfile", doc="device file name", datainfo="Str(maxchars=128)", readonly=true,
         mandatory=true, swonly=true, visibility="none")]
-#[param(name="baudrate", doc="baud rate", datatype="Int(1200, 230400)", readonly=true,
+#[param(name="baudrate", doc="baud rate", datainfo="Int(min=1200, max=230400)", readonly=true,
         default="9600", swonly=true, visibility="none")]
 pub struct SerialComm {
     internals: ModInternals,

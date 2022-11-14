@@ -22,7 +22,6 @@
 //
 //! Module dispatcher.
 
-#[macro_use]
 extern crate secop_core;
 
 mod simcryo;

@@ -204,7 +204,7 @@ impl CryoSimulator {
     }
 }
 
-#[derive(TypeDesc, Clone, PartialEq)]
+#[derive(TypeInfo, Clone, PartialEq)]
 enum Mode {
     PID,
     OpenLoop,
@@ -214,55 +214,55 @@ impl Default for Mode {
     fn default() -> Self { Mode::PID }
 }
 
-#[derive(TypeDesc, Clone, PartialEq, Default)]
+#[derive(TypeInfo, Clone, PartialEq, Default)]
 struct PID {
-    #[datatype="DoubleFrom(0.0)"]
+    #[datainfo="Double(min=0.0)"]
     p: Option<f64>,
-    #[datatype="DoubleFrom(0.0)"]
+    #[datainfo="Double(min=0.0)"]
     i: Option<f64>,
-    #[datatype="DoubleFrom(0.0)"]
+    #[datainfo="Double(min=0.0)"]
     d: Option<f64>,
 }
 
 #[derive(ModuleBase)]
 #[param(name="status", doc="status",
-        datatype="StatusType",
+        datainfo="StatusType",
         readonly=true)]
 #[param(name="value", doc="regulation temperature",
-        datatype="DoubleFrom(0.0)",
+        datainfo="Double(min=0.0)",
         readonly=true, unit="K")]
 #[param(name="sample", doc="sample temperature",
-        datatype="DoubleFrom(0.0)",
+        datainfo="Double(min=0.0)",
         readonly=true, unit="K")]
 #[param(name="target", doc="target temperature",
-        datatype="DoubleFrom(0.0)",
+        datainfo="Double(min=0.0)",
         readonly=false, default="0.0", unit="K")]
 #[param(name="setpoint", doc="current setpoint for the temperature",
-        datatype="DoubleFrom(0.0)",
+        datainfo="Double(min=0.0)",
         readonly=true, unit="K")]
 #[param(name="ramp", doc="setpoint ramping speed",
-        datatype="DoubleRange(0.0, 1e3)",
+        datainfo="Double(min=0.0, max=1e3)",
         readonly=false, default="1.0", unit="K/min")]
 #[param(name="heater", doc="current heater setting",
-        datatype="DoubleRange(0.0, 100.0)",
+        datainfo="Double(min=0.0, max=100.0)",
         readonly=true, unit="%")]
 #[param(name="p", doc="regulation coefficient P",
-        datatype="DoubleFrom(0.0)", polling="-5",
+        datainfo="Double(min=0.0)", polling="-5",
         readonly=false, default="40.0", unit="%/K", group="pid")]
 #[param(name="i", doc="regulation coefficient I",
-        datatype="DoubleRange(0.0, 100.0)", polling="-5",
+        datainfo="Double(min=0.0, max=100.0)", polling="-5",
         readonly=false, default="10.0", group="pid")]
 #[param(name="d", doc="regulation coefficient D",
-        datatype="DoubleRange(0.0, 100.0)", polling="-5",
+        datainfo="Double(min=0.0, max=100.0)", polling="-5",
         readonly=false, default="2.0", group="pid")]
 #[param(name="pid", doc="regulation coefficients",
-        datatype="PIDType", polling="0",
+        datainfo="PIDType", polling="0",
         readonly=false, group="pid")]
 #[param(name="mode", doc="regulation mode",
-        datatype="ModeType", polling="0",
+        datainfo="ModeType", polling="0",
         readonly=false, default="Mode::PID", group="pid")]
 #[param(name="pollinterval", doc="polling interval",
-        datatype="DoubleFrom(1.0)", swonly=true,
+        datainfo="Double(min=1.0)", swonly=true,
         readonly=false, default="1.0")]
 #[command(name="stop", doc="stop ramping the setpoint",
           argtype="Null", restype="Null")]

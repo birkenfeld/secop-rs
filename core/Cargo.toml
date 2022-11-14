@@ -3,7 +3,7 @@ name = "secop-core"
 version = "0.1.3"
 authors = ["Georg Brandl <g.brandl@fz-juelich.de>",
            "Enrico Faulhaber <enrico.faulhaber@frm2.tum.de>"]
-edition = "2018"
+edition = "2021"
 description = "A Rust framework for a hardware server speaking the SECoP protocol (core library)"
 keywords = ["scada", "secop", "hardware", "sample-environment"]
 license = "GPL-2.0+"

@@ -20,7 +20,7 @@
 //
 // -----------------------------------------------------------------------------
 //
-//! Derive a TypeDesc for structs to be used as SECoP Struct types.
+//! Derive a TypeInfo for structs to be used as SECoP Struct types.
 //!
 //!
 //! Deriving this for Rust enums (which can only be C-like enums) results in a
@@ -39,7 +39,7 @@
 //! This declaration:
 //!
 //! ```
-//! #[derive(TypeDesc, Clone, PartialEq)]
+//! #[derive(TypeInfo, Clone, PartialEq)]
 //! enum Mode {
 //!     PID,
 //!     Ramp,
@@ -47,7 +47,7 @@
 //! }
 //! ```
 //!
-//! will result in a new struct called `ModeType` which implements `TypeDesc`.  The
+//! will result in a new struct called `ModeType` which implements `TypeInfo`.  The
 //! respective SECoP enum will have value names "PID", "Ramp", and "OpenLoop"
 //! with values 0, 1 and 10.  For example:
 //!
@@ -70,13 +70,13 @@
 //! An example struct:
 //!
 //! ```
-//! #[derive(TypeDesc, Clone, PartialEq)]
+//! #[derive(TypeInfo, Clone, PartialEq)]
 //! struct PID {
-//!     #[datatype="DoubleFrom(0.0)"]
+//!     #[datainfo="Double(min=0.0)"]
 //!     p: f64,
-//!     #[datatype="DoubleFrom(0.0)"]
+//!     #[datainfo="Double(min=0.0)"]
 //!     i: f64,
-//!     #[datatype="DoubleFrom(0.0)"]
+//!     #[datainfo="Double(min=0.0)"]
 //!     d: f64,
 //! }
 //! ```
@@ -86,27 +86,37 @@
 //! of this type to the internal methods.
 
 
-use syn::Expr;
 use quote::{quote, format_ident};
 use darling::FromMeta;
+use proc_macro2::{Span, TokenStream};
+use syn::spanned::Spanned;
 
 
-pub fn derive_typedesc(input: synstructure::Structure) -> proc_macro2::TokenStream {
+pub fn derive_typeinfo(input: synstructure::Structure) -> TokenStream {
     match input.ast().data {
-        syn::Data::Struct(..) => derive_typedesc_struct(input),
-        syn::Data::Enum(..) => derive_typedesc_enum(input),
-        _ => panic!("impossible to derive a TypeDesc for unions")
+        syn::Data::Struct(..) => derive_typeinfo_struct(input),
+        syn::Data::Enum(..) => derive_typeinfo_enum(input),
+        _ => panic!("impossible to derive a TypeInfo for unions")
     }
 }
 
-pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::TokenStream {
+macro_rules! try_ {
+    ($expr:expr) => (
+        match $expr {
+            Ok(v) => v,
+            Err(e) => return TokenStream::from(e.to_compile_error())
+        }
+    );
+}
+
+pub fn derive_typeinfo_struct(input: synstructure::Structure) -> TokenStream {
     let name = &input.ast().ident;
     let vis = &input.ast().vis;
     // Wrapping the derive code in a "const" namespace is a trick that gives us
     // an enclosing scope where we can `use` things without leaking, and Rust does
     // not care that the actual impls are inside it.  Only the `struct` definition
     // itself must be outside.
-    let const_name = format_ident!("_DERIVE_TypeDesc_{}", name);
+    let const_name = format_ident!("_DERIVE_TypeInfo_{}", name);
     let struct_name = format_ident!("{}Type", name);
 
     let mut statics = Vec::new();
@@ -120,25 +130,26 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         // We could support tuple structs to work the same as tuples, but it
         // seems unnecessary at the moment.
         let ident = binding.ast().ident.as_ref().unwrap_or_else(
-            || panic!("TypeDesc cannot be derived for tuple structs"));
+            || panic!("TypeInfo cannot be derived for tuple structs"));
         let ident_str = ident.to_string();
         // We need the metatype instance globally available somewhere.  Since
         // it cannot (currently) be constructed in a `const` context, it needs
         // to be a lazy static.
         let dtype_static = format_ident!("STRUCT_FIELD_{}", ident_str);
-        // Find the `datatype` attribute on the field.  It must be present.
+        // Find the `datainfo` attribute on the field.  It must be present.
         let mut dtype = None;
+        let mut span = Span::call_site();
         for attr in &binding.ast().attrs {
-            if attr.path.segments[0].ident == "datatype" {
+            if attr.path.segments[0].ident == "datainfo" {
                 dtype = attr.parse_meta().ok();
+                span = attr.span();
             }
         }
         let dtype = dtype.unwrap_or_else(
-            || panic!("member {} has no valid datatype attribute", ident_str));
+            || panic!("member {} has no valid datainfo attribute", ident_str));
         let dtype = String::from_meta(&dtype).unwrap_or_else(
-            |e| panic!("member {} has no valid datatype attribute: {}", ident_str, e));
-        let dtype_expr = syn::parse_str::<Expr>(&dtype).unwrap_or_else(
-            |_| panic!("member {} has no valid datatype attribute", ident_str));
+            |e| panic!("member {} has no valid datainfo attribute: {}", ident_str, e));
+        let (dtype_t, dtype) = try_!(crate::parse_datainfo(span, &dtype));
         // Check if the Rust type is an Option.
         let mut is_option_type = false;
         if let syn::Type::Path(ref ptype) = binding.ast().ty {
@@ -148,10 +159,10 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
         }
 
         statics.push(quote! {
-            static ref #dtype_static: typedesc_type!(#dtype_expr) = #dtype_expr;
+            static ref #dtype_static: #dtype_t = #dtype;
         });
 
-        // Other code snippets we need to construct the TypeDesc impl.
+        // Other code snippets we need to construct the TypeInfo impl.
         if is_option_type {
             // Option<T>: value missing from JSON <=> value is None.
             member_to_json.push(quote! {
@@ -184,7 +195,7 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
                 ).map_err(|e| e.amend(concat!("in ", #ident_str)))?,
             });
         }
-        descr_members.push(quote! { #ident_str: #dtype_static.type_json(), });
+        descr_members.push(quote! { (#ident_str, serde_json::to_value(&*#dtype_static).unwrap()), });
         descr_optional.push(quote! { #ident_str, });
     }
 
@@ -193,27 +204,42 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
 
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
+            use std::collections::HashMap;
+            use serde::ser::{Serialize, Serializer, SerializeMap};
             use serde_json::{json, Value, map::Map};
             use lazy_static::lazy_static;
             use crate::secop_core::errors::Error;
-            use crate::secop_core::types::TypeDesc;
+            use crate::secop_core::types::TypeInfo;
 
             lazy_static! {
                 #( #statics )*
             }
 
-            impl TypeDesc for #struct_name {
-                type Repr = #name;
-                fn type_json(&self) -> Value {
-                    json!({"type": "struct",
-                           "members": { #( #descr_members )* },
-                           "optional": [ #( #descr_optional )* ]})
+            impl Serialize for #struct_name {
+                fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> where S: Serializer
+                {
+                    // TODO: serialize directly without creating the HashMap using a wrapper type
+                    let members = [#( #descr_members )*].into_iter().collect::<HashMap<_, _>>();
+                    let mut map = serializer.serialize_map(None)?;
+                    map.serialize_entry("type", "struct")?;
+                    map.serialize_entry("members", &members)?;
+                    let optional = [#( #descr_optional )*];
+                    if optional.len() < members.len() {
+                        map.serialize_entry("optional", &optional)?;
+                    }
+                    map.end()
                 }
+            }
+
+            impl TypeInfo for #struct_name {
+                type Repr = #name;
+
                 fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, Error> {
                     let mut map = Map::new();
                     #( #member_to_json )*
                     Ok(Value::Object(map))
                 }
+
                 fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, Error> {
                     if let Some(obj) = val.as_object() {
                         Ok(#name { #( #member_from_json )* })
@@ -228,10 +254,10 @@ pub fn derive_typedesc_struct(input: synstructure::Structure) -> proc_macro2::To
     generated
 }
 
-pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::TokenStream {
+pub fn derive_typeinfo_enum(input: synstructure::Structure) -> TokenStream {
     let name = &input.ast().ident;
     let vis = &input.ast().vis;
-    let const_name = format_ident!("_DERIVE_TypeDesc_{}", name);
+    let const_name = format_ident!("_DERIVE_TypeInfo_{}", name);
     let struct_name = format_ident!("{}Type", name);
 
     let mut descr_members = Vec::new();
@@ -254,7 +280,7 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
         } else {
             discr += 1;
         }
-        descr_members.push(quote! { #ident_str: #discr, });
+        descr_members.push(quote! { (#ident_str, #discr), });
         str_arms.push(quote! { #ident_str => Ok(#name::#ident), });
         int_arms.push(quote! { #discr => Ok(#name::#ident), });
     }
@@ -264,18 +290,31 @@ pub fn derive_typedesc_enum(input: synstructure::Structure) -> proc_macro2::Toke
 
         #[allow(non_upper_case_globals)]
         const #const_name: () = {
+            use std::collections::HashMap;
+            use serde::ser::{Serialize, Serializer, SerializeMap};
             use serde_json::{json, Value};
             use crate::secop_core::errors::Error;
-            use crate::secop_core::types::TypeDesc;
+            use crate::secop_core::types::TypeInfo;
 
-            impl TypeDesc for #struct_name {
-                type Repr = #name;
-                fn type_json(&self) -> Value {
-                    json!({"type": "enum", "members": { #( #descr_members )* }})
+            impl Serialize for #struct_name {
+                fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> where S: Serializer
+                {
+                    // TODO: serialize directly without creating the HashMap using a wrapper type
+                    let members = [#( #descr_members )*].into_iter().collect::<HashMap<_, _>>();
+                    let mut map = serializer.serialize_map(Some(2))?;
+                    map.serialize_entry("type", "enum")?;
+                    map.serialize_entry("members", &members)?;
+                    map.end()
                 }
+            }
+
+            impl TypeInfo for #struct_name {
+                type Repr = #name;
+
                 fn to_json(&self, val: Self::Repr) -> std::result::Result<Value, Error> {
                     Ok(json!(val as i64))
                 }
+
                 fn from_json(&self, val: &Value) -> std::result::Result<Self::Repr, Error> {
                     if let Some(s) = val.as_str() {
                         match s {

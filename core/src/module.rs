@@ -35,7 +35,7 @@ use crate::config::{ModuleConfig, Visibility};
 use crate::errors::Error;
 use crate::proto::Msg;
 use crate::server::{ReqReceiver, ModRepSender};
-use crate::types::TypeDesc;
+use crate::types::TypeInfo;
 
 /// Data that every module requires.
 #[derive(new, Clone)]
@@ -101,7 +101,7 @@ impl<T: PartialEq + Clone> CachedParam<T> {
     /// Gets a newly determined value for this parameter, which is then cached,
     /// possibly an update message is sent, and the value is returned JSONified
     /// for sending in a reply.
-    pub fn update<TD: TypeDesc<Repr=T>>(&mut self, value: T, td: &TD) -> Result<(Value, f64, bool), Error> {
+    pub fn update<TD: TypeInfo<Repr=T>>(&mut self, value: T, td: &TD) -> Result<(Value, f64, bool), Error> {
         self.time = localtime();
         let is_update = if value != self.data {
             self.data = value.clone();
@@ -164,7 +164,7 @@ pub trait ModuleBase {
     /// on whether the parameter is writable at runtime).
     fn init_parameter<T: Clone + PartialEq>(
         &mut self, param: &str, cached: impl Fn(&mut Self) -> &mut CachedParam<T>,
-        partype: &impl TypeDesc<Repr=T>, update: impl Fn(&mut Self, T) -> Result<(), Error>,
+        partype: &impl TypeInfo<Repr=T>, update: impl Fn(&mut Self, T) -> Result<(), Error>,
         swonly: bool, readonly: bool, default: Option<impl Fn() -> T>
     ) -> Result<(), Error> {
         if swonly {

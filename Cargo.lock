@@ -898,6 +898,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "secop-core",
  "secop-derive",
+ "serde",
  "serde_json",
  "serialport",
 ]

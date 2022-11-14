@@ -30,12 +30,12 @@ use secop_derive::ModuleBase;
 
 
 #[derive(ModuleBase)]
-#[param(name="status", doc="status", datatype="StatusType", readonly=true)]
-#[param(name="value", doc="current value", datatype="Double", readonly=true)]
-#[param(name="target", doc="target value", datatype="Double", readonly=false)]
-#[param(name="iomod", doc="module name of port", datatype="Str(64)", readonly=true,
+#[param(name="status", doc="status", datainfo="StatusType", readonly=true)]
+#[param(name="value", doc="current value", datainfo="Double()", readonly=true)]
+#[param(name="target", doc="target value", datainfo="Double()", readonly=false)]
+#[param(name="iomod", doc="module name of port", datainfo="Str(maxchars=64)", readonly=true,
         mandatory=true, swonly=true, visibility="none")]
-#[param(name="channel", doc="channel to control", datatype="Int(1, 2)", readonly=true,
+#[param(name="channel", doc="channel to control", datainfo="Int(min=1, max=2)", readonly=true,
         default="1", swonly=true, visibility="none")]
 pub struct ToellnerPS {
     internals: ModInternals,
@@ -45,7 +45,7 @@ pub struct ToellnerPS {
 
 impl Module for ToellnerPS {
     fn create(internals: ModInternals) -> Result<Self> {
-        let iomod = internals.config().extract_param("iomod", &Str(64)).unwrap();
+        let iomod = internals.config().extract_param("iomod", &Str::new()).unwrap();
         Ok(ToellnerPS { internals,
                         cache: Default::default(),
                         io: Client::new(&iomod).map_err(
