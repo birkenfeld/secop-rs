@@ -39,7 +39,7 @@ use secop_derive::ModuleBase;
         default="1", swonly=true, visibility="none")]
 pub struct ToellnerPS {
     internals: ModInternals,
-    cache: ToellnerPSParamCache,
+    params: ToellnerPSParams,
     io: Client,
 }
 
@@ -47,7 +47,7 @@ impl Module for ToellnerPS {
     fn create(internals: ModInternals) -> Result<Self> {
         let iomod = internals.config().extract_param("iomod", &Str::new()).unwrap();
         Ok(ToellnerPS { internals,
-                        cache: Default::default(),
+                        params: Default::default(),
                         io: Client::new(&iomod).map_err(
                             |e| e.amend(&format!(" (connecting to submodule {})", iomod)))? })
     }

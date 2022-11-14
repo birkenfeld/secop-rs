@@ -59,22 +59,22 @@ use crate::support::comm::{CommClient, CommThread, HasComm};
         default="9600", swonly=true, visibility="none")]
 pub struct SerialComm {
     internals: ModInternals,
-    cache: SerialCommParamCache,
+    params: SerialCommParams,
     comm: Option<CommClient<TTYPort>>,
 }
 
 impl Module for SerialComm {
     fn create(internals: ModInternals) -> Result<Self> {
-        Ok(SerialComm { internals, cache: Default::default(), comm: None })
+        Ok(SerialComm { internals, params: Default::default(), comm: None })
     }
 
     fn setup(&mut self) -> Result<()> {
-        let devfile = self.cache.devfile.clone();
+        let devfile = self.params.devfile.clone();
         if devfile.is_empty() {
             return Err(Error::config("need a devfile configured"));
         }
-        let timeout = Duration::from_millis((*self.cache.timeout * 1000.) as u64);
-        let baudrate = *self.cache.baudrate as u32;
+        let timeout = Duration::from_millis((*self.params.timeout * 1000.) as u64);
+        let baudrate = *self.params.baudrate as u32;
 
         let connect = move || -> Result<(TTYPort, TTYPort)> {
             info!("opening {}...", devfile);
@@ -89,8 +89,8 @@ impl Module for SerialComm {
 
         self.comm = Some(CommThread::spawn(
             Box::new(connect),
-            self.cache.sol.as_bytes(),
-            self.cache.eol.as_bytes(),
+            self.params.sol.as_bytes(),
+            self.params.eol.as_bytes(),
             timeout,
         )?);
         Ok(())

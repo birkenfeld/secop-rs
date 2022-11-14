@@ -62,38 +62,41 @@ impl ModInternals {
     }
 }
 
-/// Cache for a single parameter value.
-#[derive(Default)]
-pub struct CachedParam<T> {
-    data: T,
+/// Data bag for a single parameter value.
+pub struct ModParam<I: TypeInfo> {
+    data: I::Repr,
     time: f64,
+    /// TypeInfo for the parameter
+    pub info: I,
 }
 
-impl<T> Deref for CachedParam<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
+impl<I: TypeInfo> Deref for ModParam<I> {
+    type Target = I::Repr;
+    fn deref(&self) -> &Self::Target {
         &self.data
     }
 }
 
-impl<T> fmt::Display for CachedParam<T> where T: fmt::Display {
+impl<I: TypeInfo> fmt::Display for ModParam<I> where I::Repr: fmt::Display {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "{}", self.data)
     }
 }
 
-impl<T> fmt::Debug for CachedParam<T> where T: fmt::Debug {
+impl<I: TypeInfo> fmt::Debug for ModParam<I> where I::Repr: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "{:?}", self.data)
     }
 }
 
-impl<T: PartialEq + Clone> CachedParam<T> {
-    pub fn new(value: T) -> Self {
-        Self { data: value, time: localtime() }
+impl<I: TypeInfo> ModParam<I>
+where I::Repr: PartialEq + Clone + Default
+{
+    pub fn new(info: I) -> Self {
+        Self { data: Default::default(), time: localtime(), info }
     }
 
-    pub fn set(&mut self, value: T) {
+    pub fn set(&mut self, value: I::Repr) {
         self.time = localtime();
         self.data = value;
     }
@@ -101,7 +104,7 @@ impl<T: PartialEq + Clone> CachedParam<T> {
     /// Gets a newly determined value for this parameter, which is then cached,
     /// possibly an update message is sent, and the value is returned JSONified
     /// for sending in a reply.
-    pub fn update<TD: TypeInfo<Repr=T>>(&mut self, value: T, td: &TD) -> Result<(Value, f64, bool), Error> {
+    pub fn update(&mut self, value: I::Repr) -> Result<(Value, f64, bool), Error> {
         self.time = localtime();
         let is_update = if value != self.data {
             self.data = value.clone();
@@ -109,11 +112,15 @@ impl<T: PartialEq + Clone> CachedParam<T> {
         } else {
             false
         };
-        Ok((td.to_json(value)?, self.time, is_update))
+        Ok((self.info.to_json(value)?, self.time, is_update))
     }
 
     pub fn time(&self) -> f64 {
         self.time
+    }
+
+    pub fn to_json(&self) -> Result<Value, Error> {
+        self.info.to_json(self.data.clone())
     }
 }
 
@@ -162,16 +169,19 @@ pub trait ModuleBase {
     /// This is quite complex since we have multiple sources (defaults from
     /// code, config file, hardware) and multiple ways of using them (depending
     /// on whether the parameter is writable at runtime).
-    fn init_parameter<T: Clone + PartialEq>(
-        &mut self, param: &str, cached: impl Fn(&mut Self) -> &mut CachedParam<T>,
-        partype: &impl TypeInfo<Repr=T>, update: impl Fn(&mut Self, T) -> Result<(), Error>,
-        swonly: bool, readonly: bool, default: Option<impl Fn() -> T>
-    ) -> Result<(), Error> {
+    fn init_parameter<I>(
+        &mut self, param: &str, cached: impl Fn(&mut Self) -> &mut ModParam<I>,
+        update: impl Fn(&mut Self, I::Repr) -> Result<(), Error>,
+        swonly: bool, readonly: bool, default: Option<impl Fn() -> I::Repr>
+    ) -> Result<(), Error>
+        where I: TypeInfo, I::Repr: Clone + PartialEq + Default
+    {
+        let datainfo = cached(self).info.clone();
         if swonly {
             let value = if let Some(def) = default {
                 if let Some(val) = self.config().parameters.get(param) {
                     debug!("initializing value for param {} (from config)", param);
-                    partype.from_json(val)?
+                    datainfo.from_json(val)?
                 } else {
                     debug!("initializing value for param {} (from default)", param);
                     def().into()
@@ -179,7 +189,7 @@ pub trait ModuleBase {
             } else {
                 // must be mandatory
                 debug!("initializing value for param {} (from config)", param);
-                partype.from_json(&self.config().parameters[param])?
+                datainfo.from_json(&self.config().parameters[param])?
             };
             cached(self).set(value);
             if !readonly {
@@ -194,7 +204,7 @@ pub trait ModuleBase {
                         val.clone()
                     } else {
                         debug!("initializing value for param {} (from default)", param);
-                        partype.to_json(def().into())?
+                        cached(self).info.to_json(def().into())?
                     };
                     // This will emit an update message, but since the server is starting
                     // up, we can assume it hasn't been activated yet.

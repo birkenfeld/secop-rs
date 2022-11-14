@@ -200,6 +200,7 @@ pub fn derive_typeinfo_struct(input: synstructure::Structure) -> TokenStream {
     }
 
     let generated = quote! {
+        #[derive(Clone, Copy)]
         #vis struct #struct_name;
 
         #[allow(non_upper_case_globals)]
@@ -286,6 +287,7 @@ pub fn derive_typeinfo_enum(input: synstructure::Structure) -> TokenStream {
     }
 
     let generated = quote! {
+        #[derive(Clone, Copy)]
         #vis struct #struct_name;
 
         #[allow(non_upper_case_globals)]

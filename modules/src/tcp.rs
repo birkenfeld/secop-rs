@@ -60,21 +60,21 @@ use crate::support::comm::{CommClient, CommThread, HasComm};
         mandatory=true, swonly=true, visibility="none")]
 pub struct TcpComm {
     internals: ModInternals,
-    cache: TcpCommParamCache,
+    params: TcpCommParams,
     comm: Option<CommClient<TcpStream>>,
 }
 
 impl Module for TcpComm {
     fn create(internals: ModInternals) -> Result<Self> {
-        Ok(TcpComm { internals, cache: Default::default(), comm: None })
+        Ok(TcpComm { internals, params: Default::default(), comm: None })
     }
 
     fn setup(&mut self) -> Result<()> {
-        if self.cache.host.is_empty() {
+        if self.params.host.is_empty() {
             return Err(Error::config("need a host configured"));
         }
-        let address = format!("{}:{}", self.cache.host, self.cache.port);
-        let timeout = Duration::from_millis((*self.cache.timeout * 1000.) as u64);
+        let address = format!("{}:{}", self.params.host, self.params.port);
+        let timeout = Duration::from_millis((*self.params.timeout * 1000.) as u64);
 
         let connect = move || -> Result<(TcpStream, TcpStream)> {
             info!("connecting to {}...", address);
@@ -88,8 +88,8 @@ impl Module for TcpComm {
 
         self.comm = Some(CommThread::spawn(
             Box::new(connect),
-            self.cache.sol.as_bytes(),
-            self.cache.eol.as_bytes(),
+            self.params.sol.as_bytes(),
+            self.params.eol.as_bytes(),
             timeout,
         )?);
         Ok(())

@@ -268,7 +268,7 @@ struct PID {
           argtype="Null", restype="Null")]
 pub struct SimCryo {
     internals: ModInternals,
-    cache: SimCryoParamCache,
+    params: SimCryoParams,
     vars: Arc<Mutex<StateVars>>,
 }
 
@@ -279,7 +279,8 @@ impl Module for SimCryo {
                                heater: 0.0, ramp: 0.0, ramping: false,
                                target: 0.0, setpoint: 0.0, stopflag: false };
         let vars = Arc::new(Mutex::new(vars));
-        Ok(Self { internals, vars, cache: Default::default() })
+        let params: SimCryoParams = Default::default();
+        Ok(Self { internals, vars, params })
     }
 
     fn setup(&mut self) -> Result<()> {

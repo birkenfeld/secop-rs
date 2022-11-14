@@ -45,7 +45,7 @@ fn is_none<T>(v: &Option<T>) -> bool { v.is_none() }
 ///
 /// On conversion error, the incoming JSON Value is simply returned, and the
 /// caller is responsible for raising the correct SECoP error.
-pub trait TypeInfo : Serialize {
+pub trait TypeInfo : Serialize + Clone {
     type Repr;
     /// Convert an internal value, as determined by the module code,
     /// into the JSON representation for the protocol.
@@ -56,6 +56,7 @@ pub trait TypeInfo : Serialize {
 
 
 /// Null is not usable as a parameter data type, only for commands.
+#[derive(Clone, Copy)]
 pub struct Null;
 
 impl Serialize for Null {
@@ -78,6 +79,7 @@ impl TypeInfo for Null {
 }
 
 
+#[derive(Clone, Copy)]
 pub struct Bool;
 
 impl Serialize for Bool {
@@ -103,6 +105,7 @@ impl TypeInfo for Bool {
 
 
 #[derive(Serialize)]
+#[derive(Clone)]
 #[serde(tag = "type", rename = "double")]
 pub struct Double {
     #[serde(skip_serializing_if = "is_none")]
@@ -186,6 +189,7 @@ impl TypeInfo for Double {
 
 
 #[derive(Serialize)]
+#[derive(Clone)]
 #[serde(tag = "type", rename = "scaled")]
 pub struct Scaled {
     scale: f64,
@@ -261,6 +265,7 @@ impl TypeInfo for Scaled {
 
 
 #[derive(Serialize)]
+#[derive(Clone)]
 #[serde(tag = "type", rename = "int")]
 pub struct Int {
     min: i64,
@@ -304,6 +309,7 @@ impl TypeInfo for Int {
 
 
 #[derive(Serialize)]
+#[derive(Clone)]
 #[serde(tag = "type", rename = "blob")]
 pub struct Blob {
     #[serde(skip_serializing_if = "is_zero")]
@@ -350,6 +356,7 @@ impl TypeInfo for Blob {
 
 
 #[derive(Serialize)]
+#[derive(Clone)]
 #[serde(tag = "type", rename = "string")]
 pub struct Str {
     #[serde(skip_serializing_if = "is_zero")]
@@ -399,6 +406,7 @@ impl TypeInfo for Str {
 
 
 #[derive(Serialize)]
+#[derive(Clone)]
 #[serde(tag = "type", rename = "array")]
 pub struct ArrayOf<T: TypeInfo> {
     #[serde(skip_serializing_if = "is_zero")]
@@ -438,6 +446,7 @@ impl<T: TypeInfo> TypeInfo for ArrayOf<T> {
 
 macro_rules! impl_tuple {
     ($name:tt => $($tv:tt),* : $len:tt : $($idx:tt),*) => {
+        #[derive(Clone)]
         pub struct $name<$($tv: TypeInfo),*>($(pub $tv),*);
 
         impl<$($tv: TypeInfo),*> Serialize for $name<$($tv),*> {
@@ -493,6 +502,7 @@ impl_tuple!(Tuple6 => T1, T2, T3, T4, T5, T6 : 6 : 0, 1, 2, 3, 4, 5);
 /// You should prefer implementing your own enum class and deriving `TypeInfo`
 /// for it using secop-derive.
 #[derive(Serialize)]
+#[derive(Clone)]
 #[serde(tag = "type", rename = "enum")]
 pub struct Enum {
     members: HashMap<String, i64>
