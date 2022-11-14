@@ -186,6 +186,81 @@ impl TypeInfo for Double {
 
 
 #[derive(Serialize)]
+#[serde(tag = "type", rename = "scaled")]
+pub struct Scaled {
+    scale: f64,
+    min: i64,
+    max: i64,
+    #[serde(skip_serializing_if = "is_none")]
+    unit: Option<String>,  // TODO: interning?
+    #[serde(skip_serializing_if = "is_none")]
+    fmtstr: Option<String>,
+    #[serde(skip_serializing_if = "is_none")]
+    absolute_resolution: Option<f64>,
+    #[serde(skip_serializing_if = "is_none")]
+    relative_resolution: Option<f64>,
+}
+
+impl Scaled {
+    pub fn new() -> Self {
+        Self { scale: 1.0, min: i64::MIN, max: i64::MAX, unit: None, fmtstr: None,
+               absolute_resolution: None, relative_resolution: None }
+    }
+
+    pub fn scale(self, val: f64) -> Self {
+        Self { scale: val, .. self }
+    }
+
+    pub fn min(self, val: i64) -> Self {
+        Self { min: val, .. self }
+    }
+
+    pub fn max(self, val: i64) -> Self {
+        Self { max: val, .. self }
+    }
+
+    pub fn unit(self, val: &str) -> Self {
+        Self { unit: Some(val.into()), .. self }
+    }
+
+    pub fn fmtstr(self, val: &str) -> Self {
+        Self { fmtstr: Some(val.into()), .. self }
+    }
+
+    pub fn absolute_resolution(self, val: f64) -> Self {
+        Self { absolute_resolution: Some(val), .. self }
+    }
+
+    pub fn relative_resolution(self, val: f64) -> Self {
+        Self { relative_resolution: Some(val), .. self }
+    }
+}
+
+impl TypeInfo for Scaled {
+    type Repr = f64;
+
+    fn to_json(&self, val: Self::Repr) -> Result<Value, Error> {
+        let val = (val / self.scale).round() as i64;
+        if val >= self.min && val <= self.max {
+            Ok(json!(val))
+        } else {
+            Err(Error::bad_value(format!("expected double between {} and {}",
+                                         self.scale * self.min as f64,
+                                         self.scale * self.max as f64)))
+        }
+    }
+
+    fn from_json(&self, val: &Value) -> Result<Self::Repr, Error> {
+        match val.as_i64() {
+            Some(v) if v >= self.min && v <= self.max => Ok(v as f64 * self.scale),
+            _ => Err(Error::bad_value(format!("expected integer between {} and {}",
+                                              self.min, self.max)))
+        }
+    }
+}
+
+
+#[derive(Serialize)]
 #[serde(tag = "type", rename = "int")]
 pub struct Int {
     min: i64,
