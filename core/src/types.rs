@@ -123,33 +123,33 @@ pub struct Double {
 }
 
 impl Double {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { min: None, max: None, unit: None, fmtstr: None,
                absolute_resolution: None, relative_resolution: None }
     }
 
-    pub fn min(self, val: f64) -> Self {
-        Self { min: Some(val), .. self }
+    pub const fn min(mut self, val: f64) -> Self {
+        self.min = Some(val); self
     }
 
-    pub fn max(self, val: f64) -> Self {
-        Self { max: Some(val), .. self }
+    pub const fn max(mut self, val: f64) -> Self {
+        self.max = Some(val); self
     }
 
-    pub fn unit(self, val: &str) -> Self {
-        Self { unit: Some(val.into()), .. self }
+    pub fn unit(mut self, val: &str) -> Self {
+        self.unit = Some(val.into()); self
     }
 
-    pub fn fmtstr(self, val: &str) -> Self {
-        Self { fmtstr: Some(val.into()), .. self }
+    pub fn fmtstr(mut self, val: &str) -> Self {
+        self.fmtstr = Some(val.into()); self
     }
 
-    pub fn absolute_resolution(self, val: f64) -> Self {
-        Self { absolute_resolution: Some(val), .. self }
+    pub const fn absolute_resolution(mut self, val: f64) -> Self {
+        self.absolute_resolution = Some(val); self
     }
 
-    pub fn relative_resolution(self, val: f64) -> Self {
-        Self { relative_resolution: Some(val), .. self }
+    pub const fn relative_resolution(mut self, val: f64) -> Self {
+        self.relative_resolution = Some(val); self
     }
 }
 
@@ -206,37 +206,37 @@ pub struct Scaled {
 }
 
 impl Scaled {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { scale: 1.0, min: i64::MIN, max: i64::MAX, unit: None, fmtstr: None,
                absolute_resolution: None, relative_resolution: None }
     }
 
-    pub fn scale(self, val: f64) -> Self {
-        Self { scale: val, .. self }
+    pub const fn scale(mut self, val: f64) -> Self {
+        self.scale = val; self
     }
 
-    pub fn min(self, val: i64) -> Self {
-        Self { min: val, .. self }
+    pub const fn min(mut self, val: i64) -> Self {
+        self.min = val; self
     }
 
-    pub fn max(self, val: i64) -> Self {
-        Self { max: val, .. self }
+    pub const fn max(mut self, val: i64) -> Self {
+        self.max = val; self
     }
 
-    pub fn unit(self, val: &str) -> Self {
-        Self { unit: Some(val.into()), .. self }
+    pub fn unit(mut self, val: &str) -> Self {
+        self.unit = Some(val.into()); self
     }
 
-    pub fn fmtstr(self, val: &str) -> Self {
-        Self { fmtstr: Some(val.into()), .. self }
+    pub fn fmtstr(mut self, val: &str) -> Self {
+        self.fmtstr = Some(val.into()); self
     }
 
-    pub fn absolute_resolution(self, val: f64) -> Self {
-        Self { absolute_resolution: Some(val), .. self }
+    pub const fn absolute_resolution(mut self, val: f64) -> Self {
+        self.absolute_resolution = Some(val); self
     }
 
-    pub fn relative_resolution(self, val: f64) -> Self {
-        Self { relative_resolution: Some(val), .. self }
+    pub const fn relative_resolution(mut self, val: f64) -> Self {
+        self.relative_resolution = Some(val); self
     }
 }
 
@@ -273,16 +273,16 @@ pub struct Int {
 }
 
 impl Int {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { min: i64::MIN, max: i64::MAX }
     }
 
-    pub fn min(self, val: i64) -> Self {
-        Self { min: val, .. self }
+    pub const fn min(mut self, val: i64) -> Self {
+        self.min = val; self
     }
 
-    pub fn max(self, val: i64) -> Self {
-        Self { max: val, .. self }
+    pub const fn max(mut self, val: i64) -> Self {
+        self.max = val; self
     }
 }
 
@@ -318,16 +318,16 @@ pub struct Blob {
 }
 
 impl Blob {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { minbytes: 0, maxbytes: 1024 }
     }
 
-    pub fn minbytes(self, val: usize) -> Self {
-        Self { minbytes: val, .. self }
+    pub const fn minbytes(mut self, val: usize) -> Self {
+        self.minbytes = val; self
     }
 
-    pub fn maxbytes(self, val: usize) -> Self {
-        Self { maxbytes: val, .. self }
+    pub const fn maxbytes(mut self, val: usize) -> Self {
+        self.maxbytes = val; self
     }
 }
 
@@ -368,20 +368,20 @@ pub struct Str {
 }
 
 impl Str {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { minchars: 0, maxchars: 1024, is_utf8: false }
     }
 
-    pub fn minchars(self, val: usize) -> Self {
-        Self { minchars: val, .. self }
+    pub const fn minchars(mut self, val: usize) -> Self {
+        self.minchars = val; self
     }
 
-    pub fn maxchars(self, val: usize) -> Self {
-        Self { maxchars: val, .. self }
+    pub const fn maxchars(mut self, val: usize) -> Self {
+        self.maxchars = val; self
     }
 
-    pub fn is_utf8(self, val: bool) -> Self {
-        Self { is_utf8: val, .. self }
+    pub const fn is_utf8(mut self, val: bool) -> Self {
+        self.is_utf8 = val; self
     }
 }
 
@@ -558,6 +558,6 @@ impl Default for StatusConst {
 // there is *always* a constant with the same name as the type.
 pub type StatusType = Tuple2<StatusConstType, Str>;
 #[allow(non_upper_case_globals)]
-pub const StatusType: StatusType = Tuple2(StatusConstType, Str { minchars: 0, maxchars: 1024, is_utf8: false });
+pub const StatusType: StatusType = Tuple2(StatusConstType, Str::new());
 
 pub type Status = (StatusConst, String);

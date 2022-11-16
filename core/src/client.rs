@@ -153,7 +153,7 @@ impl LocalClient {
     }
 
     pub fn command(&self, cmd: &str, arg: Value) -> Result<Value> {
-        let req = Msg::Do { module: self.modname.clone(), command: cmd.into(), arg: arg };
+        let req = Msg::Do { module: self.modname.clone(), command: cmd.into(), arg };
         match self.transact(req)? {
             Msg::Done { data, .. } => Ok(data), // TODO extract value from report
             msg => Err(Error::protocol(format!("invalid reply message for do: {}", msg)))
@@ -200,7 +200,7 @@ impl RemoteClient {
     }
 
     pub fn command(&self, cmd: &str, arg: Value) -> Result<Value> {
-        let req = Msg::Do { module: self.modname.clone(), command: cmd.into(), arg: arg };
+        let req = Msg::Do { module: self.modname.clone(), command: cmd.into(), arg };
         match self.transact(req)? {
             Msg::Done { data, .. } => Ok(data), // TODO extract value from report
             msg => Err(Error::protocol(format!("invalid reply message for do: {}", msg)))

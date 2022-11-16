@@ -204,7 +204,7 @@ pub trait ModuleBase {
                         val.clone()
                     } else {
                         debug!("initializing value for param {} (from default)", param);
-                        cached(self).info.to_json(def().into())?
+                        datainfo.to_json(def().into())?
                     };
                     // This will emit an update message, but since the server is starting
                     // up, we can assume it hasn't been activated yet.

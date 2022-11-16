@@ -45,9 +45,10 @@ pub struct ToellnerPS {
 
 impl Module for ToellnerPS {
     fn create(internals: ModInternals) -> Result<Self> {
-        let iomod = internals.config().extract_param("iomod", &Str::new()).unwrap();
-        Ok(ToellnerPS { internals,
-                        params: Default::default(),
+        let params: ToellnerPSParams = Default::default();
+        let iomod = internals.config().extract_param("iomod", &params.iomod.info)
+            .ok_or_else(|| Error::config("invalid or missing iomod parameter"))?;
+        Ok(ToellnerPS { internals, params,
                         io: Client::new(&iomod).map_err(
                             |e| e.amend(&format!(" (connecting to submodule {})", iomod)))? })
     }
