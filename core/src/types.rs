@@ -535,13 +535,25 @@ impl TypeInfo for Enum {
 // The Status enum, and predefined type.
 
 #[derive(TypeInfo, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum StatusConst {
+    Disabled = 0,
     Idle = 100,
+    Standby = 130,
+    Prepared = 150,
     Warn = 200,
-    Unstable = 250,
+    WarnStandby = 230,
+    WarnPrepared = 250,
     Busy = 300,
+    Disabling = 310,
+    Initializing = 320,
+    Preparing = 340,
+    Starting = 360,
+    Stabilizing = 380,
+    Finalizing = 390,
     Error = 400,
-    Unknown = 500,
+    ErrorStandby = 430,
+    ErrorPrepared = 450,
 }
 
 impl Default for StatusConst {
